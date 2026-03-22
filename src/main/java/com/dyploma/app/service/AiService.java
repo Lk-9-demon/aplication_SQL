@@ -87,6 +87,119 @@ public class AiService {
         return content.trim();
     }
 
+    /**
+     * Етап 2: на основі питання, схеми, SQL і локального семплу результату сформувати
+     * людинозрозуміле пояснення. У зовнішній AI сервіс не відправляємо сирі великі набори даних —
+     * лише малі семпли/агрегації та назви колонок. Якщо відсутній OPENAI_API_KEY — повертаємо
+     * локальне форматоване пояснення як плейсхолдер.
+     */
+    public String toExplanation(String question,
+                                SchemaService.SchemaInfo schema,
+                                String sql,
+                                List<String> columns,
+                                List<List<Object>> sampleRows) throws Exception {
+        if (question == null || question.isBlank()) throw new IllegalArgumentException("Question is empty");
+        if (schema == null) throw new IllegalArgumentException("Schema is not loaded");
+
+        String apiKey = System.getenv("OPENAI_API_KEY");
+        if (apiKey == null || apiKey.isBlank()) {
+            // Локальний плейсхолдер без виклику API
+            StringBuilder sb = new StringBuilder();
+            sb.append("Answer (demo, no AI key):\n");
+            sb.append("Your question: ").append(question).append("\n\n");
+            if (columns != null && !columns.isEmpty()) {
+                sb.append("Columns: ").append(columns).append("\n");
+            }
+            if (sampleRows != null && !sampleRows.isEmpty()) {
+                sb.append("Sample rows (up to ").append(sampleRows.size()).append("):\n");
+                int shown = 0;
+                for (List<Object> row : sampleRows) {
+                    sb.append(" - ");
+                    for (int i = 0; i < row.size(); i++) {
+                        sb.append(columns != null && i < columns.size() ? columns.get(i) + "=" : "");
+                        sb.append(String.valueOf(row.get(i)));
+                        if (i + 1 < row.size()) sb.append(", ");
+                    }
+                    sb.append("\n");
+                    if (++shown >= 10) break;
+                }
+            } else {
+                sb.append("No sample rows available (or empty result).\n");
+            }
+            return sb.toString();
+        }
+
+        String model = System.getenv().getOrDefault("OPENAI_MODEL", "gpt-4o-mini");
+
+        // Compact schema brief
+        StringBuilder schemaBrief = new StringBuilder();
+        schemaBrief.append("{dialect:'").append(schema.dialect).append("', tables:[");
+        for (int i = 0; i < schema.tables.size(); i++) {
+            var t = schema.tables.get(i);
+            schemaBrief.append("{name:'").append(t.name).append("', cols:[");
+            for (int j = 0; j < t.columns.size(); j++) {
+                var c = t.columns.get(j);
+                schemaBrief.append("'").append(c.name).append("'");
+                if (j + 1 < t.columns.size()) schemaBrief.append(",");
+            }
+            schemaBrief.append("]}");
+            if (i + 1 < schema.tables.size()) schemaBrief.append(",");
+        }
+        schemaBrief.append("]}");
+
+        String system = "You are a data analyst. Produce a concise, human-friendly explanation/summary of query results. " +
+                "Avoid exposing PII. Use bullet points or short paragraphs. If the sample is small, generalize appropriately.";
+
+        StringBuilder user = new StringBuilder();
+        user.append("Schema (brief): ").append(schemaBrief).append("\n");
+        user.append("Dialect: ").append(schema.dialect).append("\n");
+        user.append("User question: ").append(question).append("\n");
+        user.append("SQL used (do NOT expose to end user, for reasoning only): \n").append(sql).append("\n");
+        if (columns != null && !columns.isEmpty()) {
+            user.append("Columns: ").append(columns).append("\n");
+        }
+        if (sampleRows != null && !sampleRows.isEmpty()) {
+            user.append("Sample rows (anonymized/limited): ");
+            int limit = Math.min(10, sampleRows.size());
+            for (int i = 0; i < limit; i++) {
+                user.append("\n").append(sampleRows.get(i));
+            }
+            user.append("\n");
+        } else {
+            user.append("No sample rows provided (possibly empty result).\n");
+        }
+        user.append("Return only a human-friendly explanation, not the raw SQL or raw rows.");
+
+        ChatRequest req = new ChatRequest();
+        req.model = model;
+        req.messages = List.of(
+                new ChatMessage("system", system),
+                new ChatMessage("user", user.toString())
+        );
+        req.temperature = 0.2;
+
+        HttpRequest httpReq = HttpRequest.newBuilder()
+                .uri(URI.create("https://api.openai.com/v1/chat/completions"))
+                .timeout(Duration.ofSeconds(60))
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(req), StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> resp = http.send(httpReq, HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() / 100 != 2) {
+            throw new RuntimeException("OpenAI error: HTTP " + resp.statusCode() + " - " + resp.body());
+        }
+
+        ChatResponse cr = gson.fromJson(resp.body(), ChatResponse.class);
+        if (cr == null || cr.choices == null || cr.choices.isEmpty()) {
+            throw new RuntimeException("Empty AI response");
+        }
+        String content = cr.choices.get(0).message.content;
+        if (content == null) content = "";
+        return content.trim();
+    }
+
     // ---- DTO для OpenAI ----
     static class ChatRequest {
         String model;
