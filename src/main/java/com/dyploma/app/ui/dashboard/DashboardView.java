@@ -117,16 +117,28 @@ public class DashboardView {
             a.showAndWait();
             return;
         }
+        long startedAt = System.currentTimeMillis();
         schemaStatus.setText("Schema: loading…");
         aiChatBtn.setDisable(true);
 
         new Thread(() -> {
             try {
                 SchemaService ss = new SchemaService();
+                // [DEBUG_LOG] start refresh
+                System.out.println("[DEBUG_LOG] Schema refresh started for user=" + user.getId() + 
+                        ", connectionName=" + conn.name + ", type=" + conn.dbType);
                 ss.refresh(user.getId(), conn);
+                var schema = AppState.getCurrentSchema();
+                long tookMs = System.currentTimeMillis() - startedAt;
                 Platform.runLater(() -> {
-                    schemaStatus.setText("Schema: loaded (saved to file)");
-                    aiChatBtn.setDisable(false);
+                    if (schema != null && schema.tables != null) {
+                        int tables = schema.tables.size();
+                        schemaStatus.setText("Schema: loaded (" + tables + " tables, " + (tookMs) + " ms, saved to file)");
+                        aiChatBtn.setDisable(tables == 0);
+                    } else {
+                        schemaStatus.setText("Schema: error — empty schema returned");
+                        aiChatBtn.setDisable(true);
+                    }
                 });
             } catch (Exception ex) {
                 Platform.runLater(() -> {

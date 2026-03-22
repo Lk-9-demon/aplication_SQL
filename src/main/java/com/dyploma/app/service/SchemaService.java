@@ -72,6 +72,8 @@ public class SchemaService {
             throw new IllegalArgumentException("Unsupported dialect: " + conn.dbType);
         }
 
+        System.out.println("[DEBUG_LOG] SchemaService.refresh: dialect=" + dialect + ", url=" + jdbcUrl);
+        long t0 = System.currentTimeMillis();
         try (Connection c = createConnection(jdbcUrl, conn)) {
             DatabaseMetaData md = c.getMetaData();
             SchemaInfo schema = new SchemaInfo();
@@ -79,6 +81,8 @@ public class SchemaService {
             schema.generatedAt = Instant.now().toEpochMilli();
 
             // Таблиці (тільки тип TABLE)
+            int tablesCount = 0;
+            int columnsCount = 0;
             try (ResultSet rsTables = md.getTables(null, null, "%", new String[]{"TABLE"})) {
                 while (rsTables.next()) {
                     String tableName = rsTables.getString("TABLE_NAME");
@@ -94,6 +98,7 @@ public class SchemaService {
                             int nullable = rsCols.getInt("NULLABLE");
                             col.nullable = (nullable == DatabaseMetaData.columnNullable);
                             t.columns.add(col);
+                            columnsCount++;
                         }
                     }
 
@@ -117,14 +122,25 @@ public class SchemaService {
                     }
 
                     schema.tables.add(t);
+                    tablesCount++;
                 }
             }
 
-            // Зберегти в AppState (простий підхід: у dedicated статичне поле через рефлексію ми не ліземо — додамо хелпер у AppState)
-            setSchemaInAppState(schema);
+            // [DEBUG_LOG] counts
+            System.out.println("[DEBUG_LOG] SchemaService.refresh: tables=" + tablesCount + ", columns=" + columnsCount);
+
+            // Зберегти в AppState напряму
+            AppState.setCurrentSchema(schema);
 
             // Зберегти у файл JSON
-            writeSchemaToFile(userId, conn, schema);
+            Path out = writeSchemaToFile(userId, conn, schema);
+            try {
+                long size = java.nio.file.Files.size(out);
+                System.out.println("[DEBUG_LOG] SchemaService.refresh: JSON saved to " + out + ", size=" + size + " bytes");
+            } catch (Exception ignore) {}
+
+            long took = System.currentTimeMillis() - t0;
+            System.out.println("[DEBUG_LOG] SchemaService.refresh: finished in " + took + " ms");
 
             return schema;
         }
@@ -144,7 +160,7 @@ public class SchemaService {
         return DriverManager.getConnection(url, props);
     }
 
-    private void writeSchemaToFile(long userId, ConnectionDao.SavedConnection conn, SchemaInfo schema) throws Exception {
+    private Path writeSchemaToFile(long userId, ConnectionDao.SavedConnection conn, SchemaInfo schema) throws Exception {
         String safeName = (conn.name == null || conn.name.isBlank()) ? ("conn_" + conn.id) : conn.name.replaceAll("[^a-zA-Z0-9_-]", "_");
         Path dir = Path.of(System.getProperty("user.home"), ".dyploma", "metadata", String.valueOf(userId));
         Files.createDirectories(dir);
@@ -152,15 +168,6 @@ public class SchemaService {
         try (FileWriter fw = new FileWriter(file.toFile())) {
             gson.toJson(schema, fw);
         }
-    }
-
-    // Невеликий місток до AppState, щоб не ламати існуючу структуру класу
-    private void setSchemaInAppState(SchemaInfo schema) {
-        try {
-            // Спробуємо викликати метод через рефлексію, якщо він існує в майбутньому.
-            AppState.class.getMethod("setCurrentSchema", Object.class).invoke(null, schema);
-        } catch (Exception ignore) {
-            // Якщо методу ще немає — ігноруємо. Пізніше додамо явну підтримку в AppState.
-        }
+        return file;
     }
 }
