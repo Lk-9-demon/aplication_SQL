@@ -13,12 +13,13 @@ public class ConnectionDao {
             int port,
             String databaseName,
             String dbUsername,
-            String dbPassword
+            String dbPassword,
+            String dbFilePath
     ) {
         String sql = """
             INSERT INTO db_connections
-            (user_id, name, db_type, host, port, database_name, db_username, db_password)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+            (user_id, name, db_type, host, port, database_name, db_username, db_password, db_file_path)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
             """;
 
         try (Connection conn = com.dyploma.app.dao.LocalDb.getConnection();
@@ -32,6 +33,7 @@ public class ConnectionDao {
             ps.setString(6, databaseName);
             ps.setString(7, dbUsername);
             ps.setString(8, dbPassword);
+            ps.setString(9, dbFilePath);
 
             ps.executeUpdate();
         } catch (Exception e) {
@@ -61,7 +63,7 @@ public class ConnectionDao {
      */
     public SavedConnection findAnyForUser(long userId) {
         String sql = """
-            SELECT id, name, db_type, host, port, database_name, db_username
+            SELECT id, name, db_type, host, port, database_name, db_username, db_file_path
             FROM db_connections
             WHERE user_id = ?
             ORDER BY id DESC
@@ -79,7 +81,8 @@ public class ConnectionDao {
                             rs.getString("host"),
                             rs.getInt("port"),
                             rs.getString("database_name"),
-                            rs.getString("db_username")
+                            rs.getString("db_username"),
+                            rs.getString("db_file_path")
                     );
                 }
                 return null;
@@ -100,8 +103,9 @@ public class ConnectionDao {
         public final int port;
         public final String database;
         public final String username;
+        public final String dbFilePath;
 
-        public SavedConnection(long id, String name, String dbType, String host, int port, String database, String username) {
+        public SavedConnection(long id, String name, String dbType, String host, int port, String database, String username, String dbFilePath) {
             this.id = id;
             this.name = name;
             this.dbType = dbType;
@@ -109,6 +113,7 @@ public class ConnectionDao {
             this.port = port;
             this.database = database;
             this.username = username;
+            this.dbFilePath = dbFilePath;
         }
     }
 }

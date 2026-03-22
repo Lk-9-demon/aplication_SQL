@@ -14,7 +14,7 @@ public class LocalDb {
             Path dir = Path.of(System.getProperty("user.home"), ".dyploma");
             Files.createDirectories(dir);
             String url = "jdbc:sqlite:" + dir.resolve(DB_NAME);
-
+            System.out.println(url);
             Connection conn = DriverManager.getConnection(url);
             initSchema(conn);
             return conn;
@@ -44,6 +44,8 @@ public class LocalDb {
           database_name TEXT NOT NULL,
           db_username TEXT NOT NULL,
           db_password TEXT NOT NULL,
+          -- шлях до локальної SQLite-бази (опційно)
+          db_file_path TEXT,
           created_at TEXT NOT NULL DEFAULT (datetime('now')),
           updated_at TEXT NOT NULL DEFAULT (datetime('now')),
           FOREIGN KEY(user_id) REFERENCES users(id)
@@ -53,6 +55,24 @@ public class LocalDb {
         try (Statement st = conn.createStatement()) {
             st.execute(usersSql);
             st.execute(connectionsSql);
+
+            // Міграція: якщо стара таблиця без db_file_path — додати колонку.
+            boolean hasDbFilePath = false;
+            try (var rs = st.executeQuery("PRAGMA table_info(db_connections)")) {
+                while (rs.next()) {
+                    if ("db_file_path".equalsIgnoreCase(rs.getString("name"))) {
+                        hasDbFilePath = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasDbFilePath) {
+                try {
+                    st.execute("ALTER TABLE db_connections ADD COLUMN db_file_path TEXT");
+                } catch (Exception ignore) {
+                    // якщо колонка вже існує або інша помилка — пропускаємо
+                }
+            }
         } catch (Exception e) {
             throw new RuntimeException("Schema init failed: " + e.getMessage(), e);
         }

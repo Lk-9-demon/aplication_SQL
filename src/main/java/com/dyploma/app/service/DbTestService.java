@@ -42,4 +42,23 @@ public class DbTestService {
             default -> throw new IllegalArgumentException("Unsupported DB type: " + dbType);
         };
     }
+
+    /**
+     * Перевірка локальної SQLite-бази за шляхом до файлу.
+     */
+    public void testSqlite(String dbFilePath) throws SQLException {
+        if (dbFilePath == null || dbFilePath.isBlank()) {
+            throw new IllegalArgumentException("SQLite file path is empty");
+        }
+        DriverManager.setLoginTimeout(5);
+        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbFilePath)) {
+            if (conn == null || conn.isClosed()) {
+                throw new SQLException("Connection is closed");
+            }
+            // пробний запит
+            try (var st = conn.createStatement()) {
+                st.execute("SELECT 1");
+            }
+        }
+    }
 }
