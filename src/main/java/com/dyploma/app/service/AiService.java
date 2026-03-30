@@ -61,7 +61,8 @@ public class AiService {
         schemaBrief.append("]}");
 
         String system = "You are a precise data analyst. Provide a correct, concise answer based ONLY on the user's question, the provided schema metadata, and the provided AGGREGATED METRICS. " +
-                "Do NOT include SQL or raw rows. Do NOT fabricate values. If metrics are insufficient, say what is missing.";
+                "If a metric 'row_count' is provided, you MUST use it as the exact numeric result when the user's question asks for a count. " +
+                "Do NOT claim metrics are missing when 'row_count' is present. Do NOT include SQL or raw rows. Do NOT fabricate values. If no relevant metrics are provided, say what is missing.";
 
         StringBuilder user = new StringBuilder();
         user.append("Schema (brief): ").append(schemaBrief).append("\n");
@@ -72,7 +73,7 @@ public class AiService {
         } else {
             user.append("Aggregated metrics: none provided.\n");
         }
-        user.append("Answer with precise numbers when available. Do NOT include SQL or raw data.");
+        user.append("Answer with precise numbers when available. If 'row_count' is present and the question asks 'how many', answer like: 'There are <row_count> ...'. Do NOT include SQL or raw data.");
 
         ChatRequest req = new ChatRequest();
         req.model = model;
@@ -134,22 +135,27 @@ public class AiService {
 
         boolean isCountIntent = isCountQuestion(question);
         TopNIntent topN = parseTopN(question);
+        boolean isNegativeExistence = isNegativeExistenceQuestion(question);
 
         String system = "You are an assistant that generates strictly valid and executable SQL for the specified RDBMS. " +
                 "Return only a single SQL statement without explanations. Use ONLY table and column names from the provided schema (case-insensitive). " +
                 (isCountIntent
                         ? "For counting questions (how many/count/quantity), DO NOT return an aggregate COUNT(*) in the SQL. Instead, return a row-level SELECT that lists one row per entity (e.g., SELECT 1 FROM <table> or SELECT <pk> FROM <table>). The app will count rows itself. "
-                        : (topN != null
-                            ? ("For top-" + topN.n + " queries, return a SELECT that produces exactly " + topN.n + " rows ordered appropriately using ORDER BY, and DO NOT append any extra LIMIT beyond what is needed to ensure exactly " + topN.n + " rows (i.e., use LIMIT " + topN.n + "). ")
-                            : "Prefer SELECT with LIMIT 1000 where applicable. ")) +
+                        : (isNegativeExistence
+                            ? "For questions about entities WITHOUT related records (e.g., customers without purchases), use a reliable anti-join pattern: either NOT EXISTS (subquery on the related table with FK to the main entity) OR LEFT JOIN ... WHERE related.pk IS NULL. Do not rely on COUNT in WHERE. Return a row-level SELECT of the main entity. "
+                            : (topN != null
+                                ? ("For top-" + topN.n + " queries, return a SELECT that produces exactly " + topN.n + " rows ordered appropriately using ORDER BY, and DO NOT append any extra LIMIT beyond what is needed to ensure exactly " + topN.n + " rows (i.e., use LIMIT " + topN.n + "). ")
+                                : "Prefer SELECT with LIMIT 1000 where applicable. "))) +
                 "Do NOT use tables or columns not present in the schema. Dialect: " + schema.dialect + ".";
 
         String user = "Schema (brief): " + schemaBrief + "\nQuestion: " + question +
                 (isCountIntent
                         ? "\nGenerate ONE row-level SELECT (or WITH ... SELECT) that returns one row per item being counted. Do NOT include COUNT(*). Do not include semicolons."
-                        : (topN != null
-                            ? ("\nGenerate ONE SELECT (or WITH ... SELECT) that returns exactly " + topN.n + " rows representing the requested top records. Use ORDER BY on the appropriate metric and include LIMIT " + topN.n + ". Do not include semicolons.")
-                            : "\nGenerate a single valid SELECT (or WITH ... SELECT) that answers the question. Do not include semicolons."));
+                        : (isNegativeExistence
+                            ? "\nGenerate ONE row-level SELECT of the main entity using NOT EXISTS or LEFT JOIN ... IS NULL against the related table (based on FK/PK from the given schema) to return entities that have NO related rows. Do not include semicolons."
+                            : (topN != null
+                                ? ("\nGenerate ONE SELECT (or WITH ... SELECT) that returns exactly " + topN.n + " rows representing the requested top records. Use ORDER BY on the appropriate metric and include LIMIT " + topN.n + ". Do not include semicolons.")
+                                : "\nGenerate a single valid SELECT (or WITH ... SELECT) that answers the question. Do not include semicolons.")));
 
         ChatRequest req = new ChatRequest();
         req.model = model;
@@ -184,6 +190,16 @@ public class AiService {
     private boolean isCountQuestion(String question) {
         String q = question == null ? "" : question.toLowerCase();
         return q.contains("how many") || q.contains("скільки") || q.contains("сколько") || q.contains("count ") || q.startsWith("count");
+    }
+
+    // Інтенція «без покупок / без пов’язаних записів»
+    private boolean isNegativeExistenceQuestion(String question) {
+        if (question == null) return false;
+        String q = question.toLowerCase();
+        return q.contains("haven't made any") || q.contains("have not made any") || q.contains("without any") ||
+               q.contains("without purchases") || q.contains("without orders") || q.contains("no purchases") ||
+               q.contains("no orders") || q.contains("без покуп") || q.contains("без заказ") ||
+               q.contains("без придбан") || q.contains("who didn't buy") || q.contains("that didn't buy");
     }
 
     // Детекція "top N" у питанні: top 5, top-10, first 3, highest 20 тощо (спрощено)

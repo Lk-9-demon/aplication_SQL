@@ -7,7 +7,6 @@ public class MainApp extends Application {
 
     @Override
     public void start(Stage stage) {
-        // Створюємо SceneManager і відкриваємо початковий екран (Auth)
         SceneManager sceneManager = new SceneManager(stage);
         sceneManager.switchToAuth();
     }

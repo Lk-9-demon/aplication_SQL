@@ -151,6 +151,10 @@ public class AiChatView {
                         mtx.append("rows_shown=").append(sample.rows != null ? sample.rows.size() : 0);
                     }
                     String metrics = mtx.length() == 0 ? null : mtx.toString();
+                    // Діагностика: що саме відправляємо в AiService.toExplanationWithMetrics
+                    try {
+                        System.out.println("[DEBUG_LOG] toExplanation metrics: " + (metrics == null ? "<none>" : metrics));
+                    } catch (Exception ignore) {}
 
                     // Етап 2: пояснення для користувача на основі СХЕМИ + агрегованих метрик (без сирих даних)
                     String explanation = ai.toExplanationWithMetrics(q, sc, sql, metrics);
