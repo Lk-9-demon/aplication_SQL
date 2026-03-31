@@ -41,7 +41,7 @@ public class AiChatView {
         question.setPromptText("Ask a question about your data in plain English...");
         question.setPrefRowCount(4);
 
-        Button askBtn = new Button("Ask");
+        Button askBtn = new Button("suck");
         Button backBtn = new Button("Back to Dashboard");
         // Активуємо кнопку, якщо схема вже завантажена; інакше підказка
         askBtn.setDisable(schema == null);
