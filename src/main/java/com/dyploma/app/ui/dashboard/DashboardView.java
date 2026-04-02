@@ -3,6 +3,7 @@ package com.dyploma.app.ui.dashboard;
 import com.dyploma.app.dao.ConnectionDao;
 import com.dyploma.app.model.User;
 import com.dyploma.app.service.SchemaService;
+import com.dyploma.app.service.LocalAnalysisService;
 import com.dyploma.app.ui.AppState;
 import com.dyploma.app.ui.ConnectionView;
 import com.dyploma.app.ui.SceneManager;
@@ -71,10 +72,45 @@ public class DashboardView {
 
         Button aiChatBtn = new Button("Open AI Chat");
         aiChatBtn.setDisable(true); // увімкнемо лише коли є схема
+        Button openLocalSqlBtn = new Button("Open Local SQL");
+        openLocalSqlBtn.setOnAction(e -> sceneManager.switchTo(new com.dyploma.app.ui.LocalSqlGenView(sceneManager).build(), "Local SQL"));
+
         Button sqlBtn = new Button("Open SQL Console (later)");
         sqlBtn.setDisable(true);
 
         Button logoutBtn = new Button("Logout");
+
+        // Тимчасова кнопка для перевірки локальної моделі (Ollama / duckdb-nsql)
+        Button testLocalModelBtn = new Button("Test local model");
+        testLocalModelBtn.setOnAction(e -> {
+            testLocalModelBtn.setDisable(true);
+            Label progress = new Label("Local AI: calling …");
+            Alert a = new Alert(Alert.AlertType.INFORMATION);
+            a.setHeaderText(null);
+            a.setTitle("Local AI Test");
+            a.getDialogPane().setContent(progress);
+            a.show();
+
+            new Thread(() -> {
+                try {
+                    String system = "You are a local data analysis assistant. Answer concisely.";
+                    String userMsg = "Hello!";
+                    String reply = new LocalAnalysisService().chat(system, userMsg);
+                    javafx.application.Platform.runLater(() -> {
+                        a.setContentText("Reply:\n" + reply);
+                        progress.setText("Reply:\n" + reply);
+                        testLocalModelBtn.setDisable(false);
+                    });
+                } catch (Exception ex) {
+                    javafx.application.Platform.runLater(() -> {
+                        a.setAlertType(Alert.AlertType.ERROR);
+                        a.setContentText("Error: " + ex.getMessage());
+                        progress.setText("Error: " + ex.getMessage());
+                        testLocalModelBtn.setDisable(false);
+                    });
+                }
+            }, "local-ai-test").start();
+        });
 
         aiChatBtn.setOnAction(e -> sceneManager.switchTo(new com.dyploma.app.ui.AiChatView(sceneManager).build(), "AI Chat"));
 
@@ -100,7 +136,7 @@ public class DashboardView {
             doRefreshSchema(user, conn, schemaStatus, aiChatBtn);
         }
 
-        VBox root = new VBox(12, title, welcome, connectionInfo, schemaStatus, refreshSchemaBtn, changeConnBtn, aiChatBtn, sqlBtn, logoutBtn);
+        VBox root = new VBox(12, title, welcome, connectionInfo, schemaStatus, refreshSchemaBtn, changeConnBtn, aiChatBtn, openLocalSqlBtn, testLocalModelBtn, sqlBtn, logoutBtn);
         root.setPadding(new Insets(16));
         root.setMaxWidth(720);
 
