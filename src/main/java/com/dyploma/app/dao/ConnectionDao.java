@@ -63,7 +63,7 @@ public class ConnectionDao {
      */
     public SavedConnection findAnyForUser(long userId) {
         String sql = """
-            SELECT id, name, db_type, host, port, database_name, db_username, db_file_path
+            SELECT id, name, db_type, host, port, database_name, db_username, db_password, db_file_path
             FROM db_connections
             WHERE user_id = ?
             ORDER BY id DESC
@@ -82,6 +82,7 @@ public class ConnectionDao {
                             rs.getInt("port"),
                             rs.getString("database_name"),
                             rs.getString("db_username"),
+                            rs.getString("db_password"),
                             rs.getString("db_file_path")
                     );
                 }
@@ -103,9 +104,10 @@ public class ConnectionDao {
         public final int port;
         public final String database;
         public final String username;
+        public final String password;
         public final String dbFilePath;
 
-        public SavedConnection(long id, String name, String dbType, String host, int port, String database, String username, String dbFilePath) {
+        public SavedConnection(long id, String name, String dbType, String host, int port, String database, String username, String password, String dbFilePath) {
             this.id = id;
             this.name = name;
             this.dbType = dbType;
@@ -113,6 +115,7 @@ public class ConnectionDao {
             this.port = port;
             this.database = database;
             this.username = username;
+            this.password = password;
             this.dbFilePath = dbFilePath;
         }
     }

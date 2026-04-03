@@ -5,7 +5,6 @@ import com.dyploma.app.ui.AppState;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
-import java.io.File;
 import java.io.FileWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,9 +16,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Сервіс для витягу та збереження метаданих БД (схеми) у файл і в пам'ять (AppState).
- */
 public class SchemaService {
 
     public static class ColumnInfo {
@@ -50,9 +46,6 @@ public class SchemaService {
 
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
 
-    /**
-     * Оновити (витягнути) схему для вказаного збереженого підключення і записати у файл + AppState.
-     */
     public SchemaInfo refresh(long userId, ConnectionDao.SavedConnection conn) throws Exception {
         if (conn == null) throw new IllegalArgumentException("Connection is null");
 
@@ -80,7 +73,6 @@ public class SchemaService {
             schema.dialect = dialect;
             schema.generatedAt = Instant.now().toEpochMilli();
 
-            // Таблиці (тільки тип TABLE)
             int tablesCount = 0;
             int columnsCount = 0;
             try (ResultSet rsTables = md.getTables(null, null, "%", new String[]{"TABLE"})) {
@@ -89,7 +81,6 @@ public class SchemaService {
                     TableInfo t = new TableInfo();
                     t.name = tableName;
 
-                    // Колонки
                     try (ResultSet rsCols = md.getColumns(null, null, tableName, "%")) {
                         while (rsCols.next()) {
                             ColumnInfo col = new ColumnInfo();
@@ -102,14 +93,12 @@ public class SchemaService {
                         }
                     }
 
-                    // Первинний ключ
                     try (ResultSet rsPk = md.getPrimaryKeys(null, null, tableName)) {
                         while (rsPk.next()) {
                             t.primaryKey.add(rsPk.getString("COLUMN_NAME"));
                         }
                     }
 
-                    // Зовнішні ключі
                     try (ResultSet rsFk = md.getImportedKeys(null, null, tableName)) {
                         while (rsFk.next()) {
                             ForeignKeyInfo fk = new ForeignKeyInfo();
@@ -126,18 +115,16 @@ public class SchemaService {
                 }
             }
 
-            // [DEBUG_LOG] counts
             System.out.println("[DEBUG_LOG] SchemaService.refresh: tables=" + tablesCount + ", columns=" + columnsCount);
 
-            // Зберегти в AppState напряму
             AppState.setCurrentSchema(schema);
 
-            // Зберегти у файл JSON
             Path out = writeSchemaToFile(userId, conn, schema);
             try {
-                long size = java.nio.file.Files.size(out);
+                long size = Files.size(out);
                 System.out.println("[DEBUG_LOG] SchemaService.refresh: JSON saved to " + out + ", size=" + size + " bytes");
-            } catch (Exception ignore) {}
+            } catch (Exception ignore) {
+            }
 
             long took = System.currentTimeMillis() - t0;
             System.out.println("[DEBUG_LOG] SchemaService.refresh: finished in " + took + " ms");
@@ -152,11 +139,7 @@ public class SchemaService {
         }
         java.util.Properties props = new java.util.Properties();
         if (conn.username != null) props.setProperty("user", conn.username);
-        if (conn.dbType != null && !"sqlite".equalsIgnoreCase(conn.dbType)) {
-            // пароль актуальний лише для mysql/postgres
-            // пароля у DTO немає (безпека), тому очікуємо, що для тестів/демо може бути порожній
-        }
-        // Пробуємо без пароля (якщо БД дозволяє) — надалі розширимо за потреби
+        if (conn.password != null) props.setProperty("password", conn.password);
         return DriverManager.getConnection(url, props);
     }
 

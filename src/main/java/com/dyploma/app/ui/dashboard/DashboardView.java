@@ -72,8 +72,8 @@ public class DashboardView {
 
         Button aiChatBtn = new Button("Open AI Chat");
         aiChatBtn.setDisable(true); // увімкнемо лише коли є схема
-        Button openLocalSqlBtn = new Button("Open Local SQL");
-        openLocalSqlBtn.setOnAction(e -> sceneManager.switchTo(new com.dyploma.app.ui.LocalSqlGenView(sceneManager).build(), "Local SQL"));
+        Button openLocalSqlBtn = new Button("Open Local AI Analyst");
+        openLocalSqlBtn.setOnAction(e -> sceneManager.switchTo(new com.dyploma.app.ui.LocalSqlGenView(sceneManager).build(), "Local AI Analyst"));
 
         Button sqlBtn = new Button("Open SQL Console (later)");
         sqlBtn.setDisable(true);
@@ -81,7 +81,7 @@ public class DashboardView {
         Button logoutBtn = new Button("Logout");
 
         // Тимчасова кнопка для перевірки локальної моделі (Ollama / duckdb-nsql)
-        Button testLocalModelBtn = new Button("Test local model");
+        Button testLocalModelBtn = new Button("Test Ollama");
         testLocalModelBtn.setOnAction(e -> {
             testLocalModelBtn.setDisable(true);
             Label progress = new Label("Local AI: calling …");
@@ -93,9 +93,10 @@ public class DashboardView {
 
             new Thread(() -> {
                 try {
+                    LocalAnalysisService localAi = new LocalAnalysisService();
                     String system = "You are a local data analysis assistant. Answer concisely.";
-                    String userMsg = "Hello!";
-                    String reply = new LocalAnalysisService().chat(system, userMsg);
+                    String userMsg = "Briefly confirm that the local analysis model is ready.";
+                    String reply = localAi.chatWithAnalysisModel(system, userMsg);
                     javafx.application.Platform.runLater(() -> {
                         a.setContentText("Reply:\n" + reply);
                         progress.setText("Reply:\n" + reply);
