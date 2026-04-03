@@ -19,6 +19,13 @@ public final class LocalSqlSupport {
             "double", "real", "text", "date", "timestamp", "top", "offset", "fetch"
     );
 
+    private static final Set<String> SQL_FUNCTIONS = Set.of(
+            "strftime", "date", "datetime", "julianday", "time", "round", "coalesce",
+            "ifnull", "nullif", "lower", "upper", "abs", "substr", "substring",
+            "length", "trim", "ltrim", "rtrim", "replace", "printf", "concat",
+            "date_trunc", "extract", "sum", "avg", "min", "max", "count", "cast"
+    );
+
     private LocalSqlSupport() {
     }
 
@@ -63,34 +70,53 @@ public final class LocalSqlSupport {
 
         String dialect = normalizeDialect(schema.dialect);
         StringBuilder prompt = new StringBuilder();
-        prompt.append("### Instructions:\n");
-        prompt.append("Your task is to convert a question into a SQL query, given a ")
+        prompt.append("You are an expert ")
                 .append(dialect)
-                .append(" database schema.\n");
-        prompt.append("Adhere to these rules:\n");
-        prompt.append("- Deliberately go through the question and database schema word by word to appropriately answer the question.\n");
+                .append(" SQL generator.\n");
+        prompt.append("Complete the SQL query for the question using only the schema below.\n");
+        prompt.append("Rules:\n");
+        prompt.append("- Return SQL only.\n");
         prompt.append("- Use table aliases to prevent ambiguity.\n");
         prompt.append("- Use only tables and columns that exist in the schema.\n");
         prompt.append("- If the question asks for a derived business metric, compute it from real columns instead of inventing a column name.\n");
-        prompt.append("- Return only one SQL query with no markdown, code fences, comments, or explanation.\n");
+        prompt.append("- When calculating a percentage, return a numeric percentage value using 100.0 to avoid integer division.\n");
 
         String schemaHints = buildSchemaSpecificHints(schema);
         if (!schemaHints.isBlank()) {
-            prompt.append(schemaHints);
+            prompt.append("Hints:\n").append(schemaHints);
         }
         if (errorHint != null && !errorHint.isBlank()) {
-            prompt.append("- Fix this issue from the previous attempt: ").append(errorHint).append(".\n");
+            prompt.append("Previous attempt issue: ").append(errorHint).append(".\n");
         }
 
-        prompt.append("\n### Input:\n");
-        prompt.append("Generate a SQL query that answers the question `").append(question).append("`.\n");
-        prompt.append("This query will run on a database whose schema is represented in this string:\n");
+        prompt.append("\nSchema:\n");
         prompt.append(buildSchemaDdl(schema)).append("\n\n");
-        prompt.append("### Response:\n");
-        prompt.append("Based on your instructions, here is the SQL query I have generated to answer the question `")
-                .append(question)
-                .append("`:\n");
+        prompt.append("Question: ").append(question).append("\n");
+        prompt.append("SQL:\nSELECT ");
         return prompt.toString();
+    }
+
+    public static String normalizeSqlReply(String rawReply) {
+        String candidate = rawReply == null ? "" : rawReply.trim();
+        if (candidate.isBlank()) {
+            return "";
+        }
+
+        candidate = stripWrapping(candidate);
+
+        Matcher sqlStart = Pattern.compile("(?is)\\b(with|select)\\b.*").matcher(candidate);
+        if (sqlStart.find()) {
+            candidate = sqlStart.group().trim();
+        } else if (looksLikeSelectContinuation(candidate)) {
+            candidate = "SELECT " + candidate.trim();
+        }
+
+        int semicolon = candidate.indexOf(';');
+        if (semicolon >= 0) {
+            candidate = candidate.substring(0, semicolon).trim();
+        }
+
+        return candidate;
     }
 
     public static ValidationResult validateSqlAgainstSchema(String sql, SchemaService.SchemaInfo schema) {
@@ -113,19 +139,26 @@ public final class LocalSqlSupport {
             }
         }
 
-        Set<String> aliases = extractAliases(normalizedSql, tables);
+        CteMetadata cte = extractCteMetadata(normalizedSql);
+        Set<String> knownSources = new LinkedHashSet<>(tables);
+        knownSources.addAll(cte.names);
+
+        Set<String> aliases = extractAliases(normalizedSql, knownSources);
         aliases.addAll(extractSelectAliases(normalizedSql));
+        aliases.addAll(cte.names);
+        aliases.addAll(cte.columns);
+        Set<String> functionNames = extractFunctionNames(normalizedSql);
         List<String> tokens = tokenize(normalizedSql);
         LinkedHashSet<String> unknown = new LinkedHashSet<>();
 
         for (int i = 0; i < tokens.size(); i++) {
             String token = tokens.get(i).toLowerCase(Locale.ROOT);
-            if (SQL_KEYWORDS.contains(token) || aliases.contains(token)) continue;
+            if (SQL_KEYWORDS.contains(token) || SQL_FUNCTIONS.contains(token) || functionNames.contains(token) || aliases.contains(token)) continue;
 
             if (i > 0) {
                 String previous = tokens.get(i - 1).toLowerCase(Locale.ROOT);
                 if (previous.equals("from") || previous.equals("join")) {
-                    if (!tables.contains(token)) {
+                    if (!knownSources.contains(token) && !aliases.contains(token)) {
                         unknown.add(tokens.get(i));
                     }
                     continue;
@@ -143,18 +176,51 @@ public final class LocalSqlSupport {
         return ValidationResult.invalid(new ArrayList<>(unknown));
     }
 
-    private static Set<String> extractAliases(String sql, Set<String> knownTables) {
+    private static Set<String> extractAliases(String sql, Set<String> knownSources) {
         Set<String> aliases = new LinkedHashSet<>();
         Pattern fromJoin = Pattern.compile("(?i)\\b(?:from|join)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s+(?:as\\s+)?([A-Za-z_][A-Za-z0-9_]*)");
         Matcher matcher = fromJoin.matcher(sql);
         while (matcher.find()) {
-            String table = matcher.group(1).toLowerCase(Locale.ROOT);
+            String source = matcher.group(1).toLowerCase(Locale.ROOT);
             String alias = matcher.group(2).toLowerCase(Locale.ROOT);
-            if (knownTables.contains(table) && !SQL_KEYWORDS.contains(alias)) {
+            if (knownSources.contains(source) && !SQL_KEYWORDS.contains(alias)) {
                 aliases.add(alias);
             }
         }
         return aliases;
+    }
+
+    private static Set<String> extractFunctionNames(String sql) {
+        Set<String> names = new LinkedHashSet<>();
+        Matcher matcher = Pattern.compile("(?i)\\b([A-Za-z_][A-Za-z0-9_]*)\\s*\\(").matcher(sql);
+        while (matcher.find()) {
+            names.add(matcher.group(1).toLowerCase(Locale.ROOT));
+        }
+        return names;
+    }
+
+    private static CteMetadata extractCteMetadata(String sql) {
+        Set<String> names = new LinkedHashSet<>();
+        Set<String> columns = new LinkedHashSet<>();
+
+        Matcher matcher = Pattern.compile("(?i)(?:\\bwith\\b|,)\\s*([A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\(([^)]*)\\))?\\s+as\\s*\\(").matcher(sql);
+        while (matcher.find()) {
+            String cteName = matcher.group(1).toLowerCase(Locale.ROOT);
+            if (!SQL_KEYWORDS.contains(cteName)) {
+                names.add(cteName);
+            }
+
+            String cteColumns = matcher.group(2);
+            if (cteColumns != null && !cteColumns.isBlank()) {
+                for (String raw : cteColumns.split(",")) {
+                    String value = raw.trim().toLowerCase(Locale.ROOT);
+                    if (!value.isBlank() && !SQL_KEYWORDS.contains(value)) {
+                        columns.add(value);
+                    }
+                }
+            }
+        }
+        return new CteMetadata(names, columns);
     }
 
     private static Set<String> extractSelectAliases(String sql) {
@@ -192,13 +258,42 @@ public final class LocalSqlSupport {
         if (tables.contains("tracks") && (tables.contains("invoice_items") || tables.contains("invoice_lines"))) {
             hints.append("- For best-selling tracks, join tracks with invoice_items or invoice_lines and rank using SUM(quantity) or SUM(unit_price * quantity). Do not invent a Sales column.\n");
         }
-        if (tables.contains("customers") && (tables.contains("invoices") || tables.contains("orders"))) {
-            hints.append("- For customer purchase questions, derive totals from invoice or order line tables instead of inventing aggregated columns.\n");
+        if (tables.contains("customers") && tables.contains("invoices") && columns.contains("total")) {
+            hints.append("- For customer revenue questions, join customers to invoices on CustomerId and aggregate invoices.Total by customer.\n");
+            hints.append("- For customer share of total sales, divide each customer's SUM(invoices.Total) * 100.0 by (SELECT SUM(Total) FROM invoices).\n");
+        } else if (tables.contains("customers") && (tables.contains("invoices") || tables.contains("orders"))) {
+            hints.append("- For customer purchase questions, derive totals from invoice or order tables instead of inventing aggregated columns.\n");
         }
         if (columns.contains("unit_price") && columns.contains("quantity")) {
             hints.append("- Revenue can be derived as unit_price * quantity when the question asks about sales amount or earnings.\n");
         }
         return hints.toString();
+    }
+
+    private static boolean looksLikeSelectContinuation(String candidate) {
+        String value = candidate.toLowerCase(Locale.ROOT).trim();
+        if (!value.contains(" from ")) {
+            return false;
+        }
+        return !value.startsWith("please")
+                && !value.startsWith("the ")
+                && !value.startsWith("sql")
+                && !value.startsWith("query")
+                && !value.startsWith("--");
+    }
+
+    private static String stripWrapping(String candidate) {
+        String value = candidate;
+        if (value.startsWith("```")) {
+            int firstNl = value.indexOf('\n');
+            if (firstNl > 0) {
+                value = value.substring(firstNl + 1);
+            }
+            if (value.endsWith("```")) {
+                value = value.substring(0, value.length() - 3);
+            }
+        }
+        return value.trim();
     }
 
     private static String stripStringLiterals(String sql) {
@@ -257,7 +352,16 @@ public final class LocalSqlSupport {
 
         public String formatMessage() {
             if (valid) return "SQL matches the loaded schema.";
+            if (unknownIdentifiers.size() == 1) {
+                String single = unknownIdentifiers.get(0);
+                if (single.contains(" ")) {
+                    return single;
+                }
+            }
             return "Unknown identifiers: " + String.join(", ", unknownIdentifiers);
         }
+    }
+
+    private record CteMetadata(Set<String> names, Set<String> columns) {
     }
 }

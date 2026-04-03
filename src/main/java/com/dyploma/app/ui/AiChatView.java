@@ -26,7 +26,7 @@ public class AiChatView {
     }
 
     public VBox build() {
-        Label title = new Label("AI Assistant");
+        Label title = new Label("AI Data Chat");
         title.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
 
         SchemaService.SchemaInfo schema = AppState.getCurrentSchema();
@@ -35,10 +35,16 @@ public class AiChatView {
         // Історія чату
         TextArea chatHistory = new TextArea();
         chatHistory.setEditable(false);
+        chatHistory.setWrapText(true);
         chatHistory.setPrefRowCount(16);
+        chatHistory.setText("""
+Assistant: Use this chat when you want to inspect data from the database directly.
+
+Examples: top 5 albums sold, most expensive track, customers from the USA, or best-selling tracks.
+""".trim());
 
         TextArea question = new TextArea();
-        question.setPromptText("Ask a question about your data in plain English...");
+        question.setPromptText("Ask a direct data question, for example: top 5 albums sold or most expensive track...");
         question.setPrefRowCount(4);
 
         Button askBtn = new Button("Ask");
@@ -78,7 +84,7 @@ public class AiChatView {
             }
 
             appendChat(chatHistory, "user", q);
-            status.setText("Thinking… (SQL generation)");
+            status.setText("Thinking... (data lookup)");
             askBtn.setDisable(true);
 
             new Thread(() -> {

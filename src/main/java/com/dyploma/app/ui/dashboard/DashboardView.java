@@ -70,10 +70,10 @@ public class DashboardView {
         Button changeConnBtn = new Button("Change connection");
         changeConnBtn.setOnAction(e -> sceneManager.switchTo(new ConnectionView(sceneManager).build(), "Connection"));
 
-        Button aiChatBtn = new Button("Open AI Chat");
+        Button aiChatBtn = new Button("Open AI Data Chat");
         aiChatBtn.setDisable(true); // увімкнемо лише коли є схема
-        Button openLocalSqlBtn = new Button("Open Local AI Analyst");
-        openLocalSqlBtn.setOnAction(e -> sceneManager.switchTo(new com.dyploma.app.ui.LocalSqlGenView(sceneManager).build(), "Local AI Analyst"));
+        Button openLocalSqlBtn = new Button("Open Local Analyst");
+        openLocalSqlBtn.setOnAction(e -> sceneManager.switchTo(new com.dyploma.app.ui.LocalSqlGenView(sceneManager).build(), "Local Analyst"));
 
         Button sqlBtn = new Button("Open SQL Console (later)");
         sqlBtn.setDisable(true);
@@ -113,7 +113,7 @@ public class DashboardView {
             }, "local-ai-test").start();
         });
 
-        aiChatBtn.setOnAction(e -> sceneManager.switchTo(new com.dyploma.app.ui.AiChatView(sceneManager).build(), "AI Chat"));
+        aiChatBtn.setOnAction(e -> sceneManager.switchTo(new com.dyploma.app.ui.AiChatView(sceneManager).build(), "AI Data Chat"));
 
         logoutBtn.setOnAction(e -> {
             AppState.setCurrentUser(null);

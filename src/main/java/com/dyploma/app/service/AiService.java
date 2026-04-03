@@ -23,6 +23,11 @@ public class AiService {
             .build();
     private final Gson gson = new Gson();
 
+    public boolean isPlannerAvailable() {
+        String apiKey = System.getenv("OPENAI_API_KEY");
+        return apiKey != null && !apiKey.isBlank();
+    }
+
     /**
      * Варіант пояснення з передачею лише агрегованих метрик (без сирих рядків).
      * metricsText може містити короткий перелік ключ=значення (наприклад: "row_count=123; avg_price=10.5").
@@ -185,6 +190,90 @@ public class AiService {
         String content = cr.choices.get(0).message.content;
         if (content == null) content = "";
         return content.trim();
+    }
+
+    public AnalysisPlan planPrivateAnalysis(String question,
+                                            SchemaService.SchemaInfo schema,
+                                            String errorHint) throws Exception {
+        if (schema == null) throw new IllegalArgumentException("Schema is not loaded");
+        if (question == null || question.isBlank()) throw new IllegalArgumentException("Question is empty");
+
+        String apiKey = System.getenv("OPENAI_API_KEY");
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException("OPENAI_API_KEY is not set");
+        }
+
+        String model = System.getenv().getOrDefault("OPENAI_MODEL", "gpt-4o-mini");
+        String schemaSummary = buildPlannerSchemaSummary(schema);
+
+        String system = "You are planning a private database analysis workflow. " +
+                "Return JSON only. Do not answer the business question directly. " +
+                "Produce a compact analysis plan with at most 3 read-only SQL queries. " +
+                "Prefer aggregate, comparison, or trend queries over raw row dumps. " +
+                "Use only table and column names from the schema. " +
+                "Each query must be a single SELECT or WITH ... SELECT statement. " +
+                "Use clear metric aliases such as revenue_total, invoice_count, customer_count, current_period_revenue, previous_period_revenue, growth_pct. " +
+                "When a primary query returns an aggregate financial metric such as revenue or sales, include at least one supporting coverage query with explicit counts of contributing business records where possible. " +
+                "For business questions about revenue, sales, or profit in a country, segment, or market, prefer this evidence package: " +
+                "(1) one summary query with aliases like revenue_total, invoice_count, avg_invoice_value, period_start, period_end; " +
+                "(2) one time breakdown query by year or month when a date column exists; " +
+                "(3) one top contributors query with a readable label and revenue_total when relevant. " +
+                "Never assume that one aggregate result row means one invoice, one order, or one customer. " +
+                "If schema lacks cost or expense data, do not plan a true profit calculation. Plan revenue or sales evidence instead and mention that limitation in analysisGoal. " +
+                "If one query is enough, return one query. " +
+                "JSON format: {\"intent\":\"...\",\"analysisGoal\":\"...\",\"queries\":[{\"id\":\"q1\",\"purpose\":\"...\",\"sql\":\"SELECT ...\"}]}";
+
+        StringBuilder user = new StringBuilder();
+        user.append("Dialect: ").append(schema.dialect).append("\n");
+        user.append("Question: ").append(question).append("\n");
+        user.append("Schema summary: ").append(schemaSummary).append("\n");
+        user.append("Constraints: max 3 queries; no INSERT/UPDATE/DELETE/ALTER/DROP; use exact schema names; keep SQL focused on analysis.\n");
+        user.append("Important: if you return an aggregate revenue or sales query, also add supporting counts such as invoice_count, customer_count, order_count, or transaction_count when the schema allows it.\n");
+        user.append("Prefer readable aliases in the final columns so a local analyst can explain the results safely.\n");
+        if (errorHint != null && !errorHint.isBlank()) {
+            user.append("Fix this problem from the previous plan: ").append(errorHint).append("\n");
+        }
+        user.append("Return JSON only.");
+
+        ChatRequest req = new ChatRequest();
+        req.model = model;
+        req.messages = List.of(
+                new ChatMessage("system", system),
+                new ChatMessage("user", user.toString())
+        );
+        req.temperature = 0.1;
+
+        HttpRequest httpReq = HttpRequest.newBuilder()
+                .uri(URI.create("https://api.openai.com/v1/chat/completions"))
+                .timeout(Duration.ofSeconds(60))
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(req), StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> resp = http.send(httpReq, HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() / 100 != 2) {
+            throw new RuntimeException("OpenAI error: HTTP " + resp.statusCode() + " - " + resp.body());
+        }
+
+        ChatResponse cr = gson.fromJson(resp.body(), ChatResponse.class);
+        if (cr == null || cr.choices == null || cr.choices.isEmpty()) {
+            throw new RuntimeException("Empty AI response");
+        }
+
+        String content = cr.choices.get(0).message.content;
+        AnalysisPlan plan = parseAnalysisPlan(content);
+        if (plan.queries == null) {
+            plan.queries = new ArrayList<>();
+        }
+        if (plan.queries.size() > 3) {
+            plan.queries = new ArrayList<>(plan.queries.subList(0, 3));
+        }
+        plan.queries.removeIf(q -> q == null || q.sql == null || q.sql.isBlank());
+        if (plan.queries.isEmpty()) {
+            throw new RuntimeException("Planner returned no executable queries");
+        }
+        return plan;
     }
 
     private boolean isCountQuestion(String question) {
@@ -376,6 +465,72 @@ public class AiService {
         return content.trim();
     }
 
+    private AnalysisPlan parseAnalysisPlan(String rawContent) {
+        String content = stripCodeFence(rawContent);
+        int start = content.indexOf('{');
+        int end = content.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            content = content.substring(start, end + 1);
+        }
+        AnalysisPlan plan = gson.fromJson(content, AnalysisPlan.class);
+        if (plan == null) {
+            throw new RuntimeException("Planner returned invalid JSON");
+        }
+        return plan;
+    }
+
+    private String buildPlannerSchemaSummary(SchemaService.SchemaInfo schema) {
+        StringBuilder summary = new StringBuilder();
+        summary.append("{dialect:'").append(schema.dialect).append("', tables:[");
+        for (int i = 0; i < schema.tables.size(); i++) {
+            var table = schema.tables.get(i);
+            summary.append("{name:'").append(table.name).append("', cols:[");
+            for (int j = 0; j < table.columns.size(); j++) {
+                var column = table.columns.get(j);
+                summary.append("'").append(column.name).append("'");
+                if (j + 1 < table.columns.size()) summary.append(",");
+            }
+            summary.append("]");
+            if (!table.primaryKey.isEmpty()) {
+                summary.append(", pk:[").append(String.join(",", table.primaryKey)).append("]");
+            }
+            if (!table.foreignKeys.isEmpty()) {
+                summary.append(", fk:[");
+                for (int j = 0; j < table.foreignKeys.size(); j++) {
+                    var fk = table.foreignKeys.get(j);
+                    summary.append("'")
+                            .append(fk.fkColumn)
+                            .append("->")
+                            .append(fk.pkTable)
+                            .append(".")
+                            .append(fk.pkColumn)
+                            .append("'");
+                    if (j + 1 < table.foreignKeys.size()) summary.append(",");
+                }
+                summary.append("]");
+            }
+            summary.append("}");
+            if (i + 1 < schema.tables.size()) summary.append(",");
+        }
+        summary.append("]}");
+        return summary.toString();
+    }
+
+    private String stripCodeFence(String text) {
+        if (text == null) return "";
+        String value = text.trim();
+        if (value.startsWith("```")) {
+            int firstNl = value.indexOf('\n');
+            if (firstNl > 0) {
+                value = value.substring(firstNl + 1);
+            }
+            if (value.endsWith("```")) {
+                value = value.substring(0, value.length() - 3);
+            }
+        }
+        return value.trim();
+    }
+
     // ---- DTO для OpenAI ----
     static class ChatRequest {
         String model;
@@ -400,5 +555,17 @@ public class AiService {
     static class Choice {
         ChatMessage message;
         @SerializedName("finish_reason") String finishReason;
+    }
+
+    public static class AnalysisPlan {
+        public String intent;
+        public String analysisGoal;
+        public List<AnalysisQuery> queries = new ArrayList<>();
+    }
+
+    public static class AnalysisQuery {
+        public String id;
+        public String purpose;
+        public String sql;
     }
 }

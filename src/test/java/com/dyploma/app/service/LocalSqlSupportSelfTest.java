@@ -4,11 +4,13 @@ public class LocalSqlSupportSelfTest {
 
     public static void main(String[] args) {
         shouldBuildSqlCoderPrompt();
+        shouldNormalizeSqlContinuationReply();
         shouldRejectInventedSalesColumn();
         shouldAcceptSelectAliasInOrderBy();
         shouldAcceptAliasedQuery();
         shouldIgnoreStringLiteralsDuringValidation();
-        shouldDefaultAnalysisModelToGemma();
+        shouldAcceptCteAndSqliteFunctions();
+        shouldDefaultAnalysisModelToQwen();
         shouldDefaultSqlModelToSqlCoder();
         shouldUseSeparateOllamaEndpoints();
         System.out.println("LocalSqlSupportSelfTest: OK");
@@ -18,10 +20,23 @@ public class LocalSqlSupportSelfTest {
         SchemaService.SchemaInfo schema = sampleSchema();
         String prompt = LocalSqlSupport.buildSqlCoderPrompt(schema, "Get the top 5 best-selling tracks", null);
 
-        assertTrue(prompt.contains("### Instructions:"), "Prompt should contain SQLCoder instructions header");
+        assertTrue(prompt.contains("You are an expert SQLite SQL generator."), "Prompt should mention the SQL dialect");
         assertTrue(prompt.contains("Get the top 5 best-selling tracks"), "Prompt should contain the question");
         assertTrue(prompt.contains("CREATE TABLE tracks"), "Prompt should contain schema DDL");
         assertTrue(prompt.contains("Do not invent a Sales column"), "Prompt should include schema-specific best-selling hint");
+        assertTrue(prompt.endsWith("SQL:\nSELECT "), "Prompt should guide completion models to continue after SELECT");
+    }
+
+    private static void shouldNormalizeSqlContinuationReply() {
+        String normalized = LocalSqlSupport.normalizeSqlReply(
+                "customers.CustomerId, customers.FirstName FROM customers ORDER BY customers.FirstName;"
+        );
+
+        assertEquals(
+                "SELECT customers.CustomerId, customers.FirstName FROM customers ORDER BY customers.FirstName",
+                normalized,
+                "Continuation replies should be normalized into a full SELECT"
+        );
     }
 
     private static void shouldRejectInventedSalesColumn() {
@@ -65,9 +80,29 @@ public class LocalSqlSupportSelfTest {
         assertTrue(validation.isValid(), "Validation should ignore string literals like 'USA'");
     }
 
-    private static void shouldDefaultAnalysisModelToGemma() {
+    private static void shouldAcceptCteAndSqliteFunctions() {
+        SchemaService.SchemaInfo schema = sampleInvoiceSchema();
+        var validation = LocalSqlSupport.validateSqlAgainstSchema(
+                """
+                WITH monthly_sales(month_key, max_sales) AS (
+                    SELECT strftime('%Y-%m', InvoiceDate) AS month_key, SUM(Total) AS max_sales
+                    FROM invoices
+                    GROUP BY strftime('%Y-%m', InvoiceDate)
+                )
+                SELECT month_key, max_sales
+                FROM monthly_sales
+                ORDER BY max_sales DESC
+                LIMIT 1
+                """,
+                schema
+        );
+
+        assertTrue(validation.isValid(), "Validation should accept SQLite functions and CTE aliases");
+    }
+
+    private static void shouldDefaultAnalysisModelToQwen() {
         LocalAnalysisService service = new LocalAnalysisService();
-        assertEquals("gemma3:1b", service.getConfiguredAnalysisModel(), "Default analysis model should be gemma3:1b");
+        assertEquals("qwen3:8b", service.getConfiguredAnalysisModel(), "Default analysis model should be qwen3:8b");
     }
 
     private static void shouldDefaultSqlModelToSqlCoder() {
@@ -112,6 +147,21 @@ public class LocalSqlSupportSelfTest {
         customers.columns.add(column("Country", "TEXT"));
 
         schema.tables.add(customers);
+        return schema;
+    }
+
+    private static SchemaService.SchemaInfo sampleInvoiceSchema() {
+        SchemaService.SchemaInfo schema = new SchemaService.SchemaInfo();
+        schema.dialect = "sqlite";
+
+        SchemaService.TableInfo invoices = new SchemaService.TableInfo();
+        invoices.name = "invoices";
+        invoices.columns.add(column("InvoiceId", "INTEGER"));
+        invoices.columns.add(column("InvoiceDate", "DATETIME"));
+        invoices.columns.add(column("BillingCountry", "TEXT"));
+        invoices.columns.add(column("Total", "NUMERIC"));
+
+        schema.tables.add(invoices);
         return schema;
     }
 

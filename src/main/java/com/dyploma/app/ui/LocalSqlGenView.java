@@ -1,22 +1,18 @@
 package com.dyploma.app.ui;
 
 import com.dyploma.app.dao.ConnectionDao;
+import com.dyploma.app.model.User;
+import com.dyploma.app.service.AiService;
 import com.dyploma.app.service.LocalAnalysisService;
 import com.dyploma.app.service.LocalSqlSupport;
 import com.dyploma.app.service.SchemaService;
 import com.dyploma.app.service.SqlExecuteService;
-import javafx.beans.property.SimpleObjectProperty;
-import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.TableColumn;
-import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
-
-import java.util.List;
 
 public class LocalSqlGenView {
 
@@ -28,246 +24,371 @@ public class LocalSqlGenView {
 
     public VBox build() {
         LocalAnalysisService localAi = new LocalAnalysisService();
+        AiService plannerAi = new AiService();
 
-        Label title = new Label("Local AI Analyst (via Ollama)");
+        Label title = new Label("Private Local Analyst");
         title.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
 
+        Label subtitle = new Label("Ask analytical questions here. The app can use cloud planning without sending raw business data, then execute analysis locally and let the local model explain the result.");
+        subtitle.setWrapText(true);
+
         SchemaService.SchemaInfo schema = AppState.getCurrentSchema();
-        Label schemaHint = new Label(schema != null ? "Schema: loaded" : "Schema: not loaded (go to Dashboard -> Refresh schema)");
-        String analysisModel = localAi.getConfiguredAnalysisModel();
-        Label agentHint = new Label("Ollama SQL model: " + localAi.getConfiguredSqlModel() + " | Analysis model: " + analysisModel);
+        Label schemaHint = new Label(schema != null
+                ? "Schema: loaded"
+                : "Schema: not loaded (go to Dashboard -> Refresh schema)");
+
+        Label agentHint = new Label("Private analysis model: " + localAi.getConfiguredAnalysisModel()
+                + " | Planner: " + (plannerAi.isPlannerAvailable() ? "cloud schema-only" : "local fallback"));
         agentHint.setStyle("-fx-opacity: 0.75;");
 
+        TextArea chatHistory = new TextArea();
+        chatHistory.setEditable(false);
+        chatHistory.setWrapText(true);
+        chatHistory.setPrefRowCount(18);
+        chatHistory.setText("""
+Local analyst: Ask about trends, comparisons, growth, customer segments, seasonality, or simple forecasts.
+
+If you want to inspect raw rows or ask direct data lookup questions like "top 5 albums" or "most expensive track", use AI Data Chat from the dashboard.
+""".trim());
+
         TextArea question = new TextArea();
-        question.setPromptText("Ask a question about your data. Ollama will generate SQL, run it locally, and summarize the result.");
+        question.setPromptText("Ask an analytical question, for example: Compare this month to last month, or estimate next month's revenue trend.");
         question.setPrefRowCount(4);
 
-        TextArea sqlArea = new TextArea();
-        sqlArea.setPromptText("Generated SQL will appear here...");
-        sqlArea.setEditable(false);
-        sqlArea.setPrefRowCount(5);
-
-        TextArea analysisArea = new TextArea();
-        analysisArea.setPromptText("Local AI explanation will appear here...");
-        analysisArea.setEditable(false);
-        analysisArea.setWrapText(true);
-        analysisArea.setPrefRowCount(8);
-
-        Button genBtn = new Button("Generate SQL");
-        Button runBtn = new Button("Run + Analyze");
-        runBtn.setDisable(true);
+        Button askBtn = new Button("Analyze");
+        askBtn.setDisable(schema == null);
         Button backBtn = new Button("Back to Dashboard");
 
         Label status = new Label("Ready");
 
-        TableView<List<Object>> table = new TableView<>();
-        table.setPlaceholder(new Label("No data yet"));
-        table.setMaxHeight(340);
-
-        genBtn.setOnAction(e -> {
+        askBtn.setOnAction(e -> {
             String q = question.getText();
             if (q == null || q.isBlank()) {
                 status.setText("Enter a question first");
                 return;
             }
+
             SchemaService.SchemaInfo sc = AppState.getCurrentSchema();
             if (sc == null) {
                 status.setText("Schema is not loaded - go to Dashboard and click 'Refresh schema'");
                 return;
             }
 
-            sqlArea.clear();
-            analysisArea.clear();
-            table.getColumns().clear();
-            table.getItems().clear();
-
-            String sqlPrompt = LocalSqlSupport.buildSqlCoderPrompt(sc, q, null);
-            try {
-                System.out.println("[DEBUG_LOG] local sql prompt length: " + sqlPrompt.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
-            } catch (Exception ignore) {
-            }
-
-            genBtn.setDisable(true);
-            runBtn.setDisable(true);
-            status.setText("Generating SQL via local model...");
-
-            new Thread(() -> {
-                try {
-                    String system = "You translate natural language into SQL. Output SQL only.";
-                    String userMsg = sqlPrompt;
-                    String reply = localAi.chatWithSqlModel(system, userMsg);
-                    try {
-                        String prev = reply == null ? "" : reply.replaceAll("\n", " ");
-                        if (prev.length() > 200) prev = prev.substring(0, 200) + "...";
-                        System.out.println("[DEBUG_LOG] local toSql (first): " + prev);
-                    } catch (Exception ignore) {
-                    }
-
-                    String candidate = reply == null ? "" : reply.trim();
-                    LocalSqlSupport.ValidationResult validation = LocalSqlSupport.validateSqlAgainstSchema(candidate, sc);
-                    if (!validation.isValid()) {
-                        System.out.println("[DEBUG_LOG] local toSql validation issues: " + validation.formatMessage());
-                        String retryUser = LocalSqlSupport.buildSqlCoderPrompt(sc, q, validation.formatMessage());
-                        String retry = localAi.chatWithSqlModel(system, retryUser);
-                        try {
-                            String prev2 = retry == null ? "" : retry.replaceAll("\n", " ");
-                            if (prev2.length() > 200) prev2 = prev2.substring(0, 200) + "...";
-                            System.out.println("[DEBUG_LOG] local toSql (retry): " + prev2);
-                        } catch (Exception ignore) {
-                        }
-                        LocalSqlSupport.ValidationResult retryValidation = LocalSqlSupport.validateSqlAgainstSchema(retry, sc);
-                        if (retryValidation.isValid()) {
-                            candidate = retry == null ? "" : retry.trim();
-                            validation = retryValidation;
-                        }
-                    }
-
-                    final String finalSql = candidate;
-                    final LocalSqlSupport.ValidationResult finalValidation = LocalSqlSupport.validateSqlAgainstSchema(finalSql, sc);
-                    javafx.application.Platform.runLater(() -> {
-                        sqlArea.setText(finalSql);
-                        if (!finalValidation.isValid()) {
-                            analysisArea.setText("The SQL model returned a query that does not match the loaded schema. " + finalValidation.formatMessage());
-                            status.setText("SQL generated, but validation failed");
-                            genBtn.setDisable(false);
-                            runBtn.setDisable(true);
-                            return;
-                        }
-                        if (analysisModel != null && !analysisModel.isBlank()) {
-                            analysisArea.setText("SQL is ready. Click 'Run + Analyze' to execute it locally and ask Ollama for an explanation.");
-                        } else {
-                            analysisArea.setText("SQL is ready. Execution will work, but natural-language local analysis needs LOCAL_AI_ANALYSIS_MODEL.");
-                        }
-                        status.setText("SQL generated");
-                        genBtn.setDisable(false);
-                        runBtn.setDisable(finalSql.isBlank());
-                    });
-                } catch (Exception ex1) {
-                    javafx.application.Platform.runLater(() -> {
-                        status.setText("Error: " + ex1.getMessage());
-                        genBtn.setDisable(false);
-                        runBtn.setDisable(true);
-                    });
-                }
-            }, "local-sql-gen").start();
-        });
-
-        runBtn.setOnAction(e -> {
-            String sql = sqlArea.getText();
-            if (sql == null || sql.isBlank()) {
-                status.setText("Nothing to run");
-                return;
-            }
-            var user = AppState.getCurrentUser();
+            User user = AppState.getCurrentUser();
             if (user == null) {
                 status.setText("Not logged in");
                 return;
             }
-            var conn = new ConnectionDao().findAnyForUser(user.getId());
+
+            ConnectionDao.SavedConnection conn = new ConnectionDao().findAnyForUser(user.getId());
             if (conn == null) {
                 status.setText("No saved connection");
                 return;
             }
 
-            String q = question.getText();
-            SchemaService.SchemaInfo sc = AppState.getCurrentSchema();
-            LocalSqlSupport.ValidationResult validation = LocalSqlSupport.validateSqlAgainstSchema(sql, sc);
-            if (!validation.isValid()) {
-                status.setText("SQL validation failed");
-                analysisArea.setText("The generated SQL does not match the loaded schema. " + validation.formatMessage());
-                runBtn.setDisable(true);
-                return;
-            }
+            appendChat(chatHistory, "user", q);
+            question.clear();
+            askBtn.setDisable(true);
+            status.setText("Preparing private analysis...");
 
-            genBtn.setDisable(true);
-            runBtn.setDisable(true);
-            analysisArea.setText("Running query locally and asking Ollama to analyze the result...");
-            status.setText("Running locally and analyzing...");
-
-            new Thread(() -> {
-                try {
-                    String clean = sql.trim();
-                    if (clean.endsWith(";")) clean = clean.substring(0, clean.length() - 1).trim();
-
-                    SqlExecuteService exec = new SqlExecuteService();
-                    long count = -1L;
-                    try {
-                        count = exec.countRows(conn, clean, 15);
-                    } catch (Exception ignore) {
-                    }
-                    var sample = exec.querySample(conn, clean, 1000, 20);
-
-                    String explanation;
-                    try {
-                        explanation = localAi.explainQueryResult(q, sc, clean, sample.columns, sample.rows, count);
-                    } catch (Exception exExplain) {
-                        explanation = "Local analysis is unavailable right now: " + exExplain.getMessage();
-                    }
-
-                    final long fCount = count;
-                    final SqlExecuteService.QueryResult fSample = sample;
-                    final String fExplanation = explanation;
-                    javafx.application.Platform.runLater(() -> {
-                        renderTable(table, fSample.columns, fSample.rows);
-                        analysisArea.setText(fExplanation);
-                        String totalText = fCount >= 0 ? String.valueOf(fCount) : "unknown";
-                        status.setText("Done (rows_shown=" + (fSample.rows == null ? 0 : fSample.rows.size()) + ", total=" + totalText + (fSample.truncated ? ", truncated" : "") + ")");
-                        genBtn.setDisable(false);
-                        runBtn.setDisable(false);
-                    });
-                } catch (Exception ex2) {
-                    javafx.application.Platform.runLater(() -> {
-                        status.setText("Error: " + ex2.getMessage());
-                        analysisArea.setText("Execution failed before the local agent could analyze the result.");
-                        genBtn.setDisable(false);
-                        runBtn.setDisable(false);
-                    });
-                }
-            }, "local-sql-run").start();
+            new Thread(() -> runLocalAnalysis(plannerAi, localAi, sc, conn, q, chatHistory, askBtn, status), "local-analyst-chat").start();
         });
 
         backBtn.setOnAction(e -> sceneManager.switchTo(new com.dyploma.app.ui.dashboard.DashboardView(sceneManager).build(), "Dashboard"));
 
-        HBox btns = new HBox(10, genBtn, runBtn, backBtn);
-        VBox root = new VBox(
-                12,
-                title,
-                schemaHint,
-                agentHint,
-                new Label("Question"),
-                question,
-                new Label("Generated SQL"),
-                sqlArea,
-                btns,
-                new Label("Result"),
-                table,
-                new Label("Local analysis"),
-                analysisArea,
-                status
-        );
+        HBox buttons = new HBox(10, askBtn, backBtn);
+        VBox root = new VBox(12, title, subtitle, schemaHint, agentHint, chatHistory, question, buttons, status);
         root.setPadding(new Insets(16));
-        root.setMaxWidth(980);
+        root.setMaxWidth(920);
+
+        root.sceneProperty().addListener((obs, oldScene, newScene) -> {
+            if (newScene != null) {
+                javafx.application.Platform.runLater(() -> askBtn.setDisable(AppState.getCurrentSchema() == null));
+            }
+        });
+
         return root;
     }
 
-    private void renderTable(TableView<List<Object>> table, List<String> columns, List<List<Object>> rows) {
-        table.getColumns().clear();
-        table.getItems().clear();
-        if (columns != null) {
-            for (int i = 0; i < columns.size(); i++) {
-                final int idx = i;
-                TableColumn<List<Object>, Object> col = new TableColumn<>(columns.get(i));
-                col.setCellValueFactory(cd -> {
-                    List<Object> r = cd.getValue();
-                    Object v = (r != null && idx < r.size()) ? r.get(idx) : null;
-                    return new SimpleObjectProperty<>(v);
-                });
-                col.setPrefWidth(140);
-                table.getColumns().add(col);
+    private void runLocalAnalysis(AiService plannerAi,
+                                  LocalAnalysisService localAi,
+                                  SchemaService.SchemaInfo schema,
+                                  ConnectionDao.SavedConnection conn,
+                                  String question,
+                                  TextArea chatHistory,
+                                  Button askBtn,
+                                  Label status) {
+        try {
+            String explanation;
+            long totalEvidenceRows;
+
+            if (plannerAi.isPlannerAvailable()) {
+                statusOnUi(status, "Planning private analysis...");
+                AiService.AnalysisPlan plan = buildAnalysisPlan(plannerAi, schema, question);
+                java.util.List<LocalAnalysisService.AnalysisEvidence> evidences = executeAnalysisPlan(conn, schema, plan);
+                totalEvidenceRows = evidences.stream().mapToInt(e -> e.rows == null ? 0 : e.rows.size()).sum();
+                try {
+                    explanation = localAi.explainPlannedAnalysis(question, schema, plan, evidences);
+                } catch (Exception exExplain) {
+                    explanation = "I executed the private analysis plan, but the local analyst could not summarize it yet: " + exExplain.getMessage();
+                }
+            } else {
+                statusOnUi(status, "Running local fallback analysis...");
+                String hiddenSql = buildHiddenSql(localAi, schema, question);
+                LocalSqlSupport.ValidationResult validation = LocalSqlSupport.validateSqlAgainstSchema(hiddenSql, schema);
+                if (!validation.isValid()) {
+                    String reply = buildValidationMessage(validation);
+                    javafx.application.Platform.runLater(() -> {
+                        appendChat(chatHistory, "assistant", reply);
+                        status.setText("Analysis needs a clearer question");
+                        askBtn.setDisable(false);
+                    });
+                    return;
+                }
+
+                SqlExecuteService exec = new SqlExecuteService();
+                String cleanSql = hiddenSql.trim();
+                if (cleanSql.endsWith(";")) {
+                    cleanSql = cleanSql.substring(0, cleanSql.length() - 1).trim();
+                }
+
+                long count = -1L;
+                try {
+                    count = exec.countRows(conn, cleanSql, 15);
+                } catch (Exception ignore) {
+                }
+
+                SqlExecuteService.QueryResult sample = exec.querySample(conn, cleanSql, 1000, 20);
+                totalEvidenceRows = sample.rows == null ? 0 : sample.rows.size();
+
+                try {
+                    explanation = localAi.explainQueryResult(question, schema, cleanSql, sample.columns, sample.rows, count);
+                } catch (Exception exExplain) {
+                    explanation = "I ran the private analysis query, but the local analyst could not summarize it yet: " + exExplain.getMessage();
+                }
+            }
+
+            final String finalExplanation = explanation == null || explanation.isBlank()
+                    ? "The private analysis pipeline finished, but the local analyst returned an empty answer. Try asking the same question with a clearer metric or time period."
+                    : explanation;
+            final long finalEvidenceRows = totalEvidenceRows;
+
+            javafx.application.Platform.runLater(() -> {
+                appendChat(chatHistory, "assistant", finalExplanation);
+                status.setText("Done (rows_analyzed=" + finalEvidenceRows + ")");
+                askBtn.setDisable(false);
+            });
+        } catch (Exception ex) {
+            javafx.application.Platform.runLater(() -> {
+                appendChat(chatHistory, "assistant", "I couldn't complete a trustworthy private analysis for that question yet. Try phrasing the metric and time period more explicitly.\n\nDetail: " + ex.getMessage());
+                status.setText("Error");
+                askBtn.setDisable(false);
+            });
+        }
+    }
+
+    private AiService.AnalysisPlan buildAnalysisPlan(AiService plannerAi,
+                                                     SchemaService.SchemaInfo schema,
+                                                     String question) throws Exception {
+        AiService.AnalysisPlan firstPlan = plannerAi.planPrivateAnalysis(question, schema, null);
+        String firstIssues = validatePlan(firstPlan, schema);
+        if (firstIssues == null) {
+            if (!needsSupportingCoverage(question, firstPlan)) {
+                return firstPlan;
+            }
+
+            String coverageHint = "Add supporting evidence queries with explicit aliases like invoice_count or customer_count. Do not rely on one aggregate result row as coverage.";
+            AiService.AnalysisPlan coveragePlan = plannerAi.planPrivateAnalysis(
+                    question,
+                    schema,
+                    coverageHint
+            );
+            String coverageIssues = validatePlan(coveragePlan, schema);
+            if (coverageIssues == null) {
+                return coveragePlan;
+            }
+            firstIssues = coverageHint + " " + coverageIssues;
+        }
+
+        AiService.AnalysisPlan retryPlan = plannerAi.planPrivateAnalysis(question, schema, firstIssues);
+        String retryIssues = validatePlan(retryPlan, schema);
+        if (retryIssues == null) {
+            if (!needsSupportingCoverage(question, retryPlan)) {
+                return retryPlan;
+            }
+
+            String coverageRetryHint = "Add supporting evidence queries with explicit aliases like invoice_count or customer_count. Distinguish aggregate totals from source-record counts.";
+            AiService.AnalysisPlan coverageRetryPlan = plannerAi.planPrivateAnalysis(question, schema, coverageRetryHint);
+            String coverageRetryIssues = validatePlan(coverageRetryPlan, schema);
+            if (coverageRetryIssues == null) {
+                return coverageRetryPlan;
+            }
+            retryIssues = coverageRetryHint + " " + coverageRetryIssues;
+        }
+
+        throw new IllegalArgumentException("Planner could not build a schema-safe analysis plan. " + retryIssues);
+    }
+
+    private java.util.List<LocalAnalysisService.AnalysisEvidence> executeAnalysisPlan(ConnectionDao.SavedConnection conn,
+                                                                                      SchemaService.SchemaInfo schema,
+                                                                                      AiService.AnalysisPlan plan) throws Exception {
+        SqlExecuteService exec = new SqlExecuteService();
+        java.util.List<LocalAnalysisService.AnalysisEvidence> evidences = new java.util.ArrayList<>();
+        for (AiService.AnalysisQuery query : plan.queries) {
+            if (query == null || query.sql == null || query.sql.isBlank()) {
+                continue;
+            }
+
+            String cleanSql = query.sql.trim();
+            if (cleanSql.endsWith(";")) {
+                cleanSql = cleanSql.substring(0, cleanSql.length() - 1).trim();
+            }
+
+            LocalSqlSupport.ValidationResult validation = LocalSqlSupport.validateSqlAgainstSchema(cleanSql, schema);
+            if (!validation.isValid()) {
+                throw new IllegalArgumentException("Planner query '" + safeLabel(query.purpose, query.id) + "' is invalid. " + validation.formatMessage());
+            }
+
+            long count = -1L;
+            try {
+                count = exec.countRows(conn, cleanSql, 15);
+            } catch (Exception ignore) {
+            }
+            SqlExecuteService.QueryResult sample = exec.querySample(conn, cleanSql, 60, 20);
+
+            LocalAnalysisService.AnalysisEvidence evidence = new LocalAnalysisService.AnalysisEvidence();
+            evidence.id = query.id;
+            evidence.purpose = query.purpose;
+            evidence.sql = cleanSql;
+            evidence.resultRowCount = count;
+            evidence.columns = sample.columns;
+            evidence.rows = sample.rows;
+            evidence.truncated = sample.truncated;
+            evidences.add(evidence);
+        }
+
+        if (evidences.isEmpty()) {
+            throw new IllegalArgumentException("Planner returned no executable evidence");
+        }
+        return evidences;
+    }
+
+    private String buildHiddenSql(LocalAnalysisService localAi,
+                                  SchemaService.SchemaInfo schema,
+                                  String question) throws Exception {
+        String system = "You translate analytical questions into SQL. Output SQL only.";
+        String firstPrompt = LocalSqlSupport.buildSqlCoderPrompt(schema, question, null);
+        String firstReply = localAi.chatWithSqlModel(system, firstPrompt);
+        String candidate = LocalSqlSupport.normalizeSqlReply(firstReply);
+        LocalSqlSupport.ValidationResult validation = LocalSqlSupport.validateSqlAgainstSchema(candidate, schema);
+        if (validation.isValid()) {
+            return candidate;
+        }
+
+        String retryPrompt = LocalSqlSupport.buildSqlCoderPrompt(schema, question, validation.formatMessage());
+        String retryReply = localAi.chatWithSqlModel(system, retryPrompt);
+        String retryCandidate = LocalSqlSupport.normalizeSqlReply(retryReply);
+        LocalSqlSupport.ValidationResult retryValidation = LocalSqlSupport.validateSqlAgainstSchema(retryCandidate, schema);
+        if (retryValidation.isValid()) {
+            return retryCandidate;
+        }
+
+        if (!candidate.isBlank()) {
+            return candidate;
+        }
+        return retryCandidate;
+    }
+
+    private String validatePlan(AiService.AnalysisPlan plan, SchemaService.SchemaInfo schema) {
+        if (plan == null || plan.queries == null || plan.queries.isEmpty()) {
+            return "planner returned no queries";
+        }
+        if (plan.queries.size() > 3) {
+            return "planner returned more than 3 queries";
+        }
+        java.util.List<String> issues = new java.util.ArrayList<>();
+        for (AiService.AnalysisQuery query : plan.queries) {
+            if (query == null || query.sql == null || query.sql.isBlank()) {
+                issues.add("query is empty");
+                continue;
+            }
+            LocalSqlSupport.ValidationResult validation = LocalSqlSupport.validateSqlAgainstSchema(query.sql, schema);
+            if (!validation.isValid()) {
+                issues.add(safeLabel(query.purpose, query.id) + ": " + validation.formatMessage());
             }
         }
-        if (rows != null) {
-            table.setItems(FXCollections.observableArrayList(rows));
+        return issues.isEmpty() ? null : String.join("; ", issues);
+    }
+
+    private String buildValidationMessage(LocalSqlSupport.ValidationResult validation) {
+        String base = "I couldn't build a schema-safe private analysis for that question yet.";
+        if (validation == null) {
+            return base + " Try asking about a clearer metric or a narrower time period.";
         }
+        return base + " Try asking about a clearer metric, entity, or time period.\n\nDetail: " + validation.formatMessage();
+    }
+
+    private boolean needsSupportingCoverage(String question, AiService.AnalysisPlan plan) {
+        if (plan == null || plan.queries == null || plan.queries.isEmpty()) {
+            return false;
+        }
+
+        String q = question == null ? "" : question.toLowerCase(java.util.Locale.ROOT);
+        boolean financialQuestion = q.contains("profit")
+                || q.contains("revenue")
+                || q.contains("sales")
+                || q.contains("income")
+                || q.contains("прибут")
+                || q.contains("дохід")
+                || q.contains("вируч")
+                || q.contains("продаж");
+        if (!financialQuestion) {
+            return false;
+        }
+
+        boolean hasAggregate = false;
+        boolean hasCoverage = false;
+        for (AiService.AnalysisQuery query : plan.queries) {
+            if (query == null || query.sql == null) {
+                continue;
+            }
+            String sql = query.sql.toUpperCase(java.util.Locale.ROOT);
+            if (sql.contains("SUM(") || sql.contains("AVG(") || sql.contains("TOTAL(")) {
+                hasAggregate = true;
+            }
+            if (sql.contains("COUNT(")) {
+                hasCoverage = true;
+            }
+
+            String purpose = query.purpose == null ? "" : query.purpose.toLowerCase(java.util.Locale.ROOT);
+            if (purpose.contains("count") || purpose.contains("coverage") || purpose.contains("customer")) {
+                hasCoverage = true;
+            }
+        }
+        return hasAggregate && !hasCoverage;
+    }
+
+    private void statusOnUi(Label status, String text) {
+        javafx.application.Platform.runLater(() -> status.setText(text));
+    }
+
+    private String safeLabel(String purpose, String id) {
+        if (purpose != null && !purpose.isBlank()) {
+            return purpose;
+        }
+        return id != null && !id.isBlank() ? id : "query";
+    }
+
+    private void appendChat(TextArea history, String role, String content) {
+        String prefix = switch (role) {
+            case "user" -> "You: ";
+            case "assistant" -> "Local analyst: ";
+            default -> "";
+        };
+        String current = history.getText();
+        if (current == null) current = "";
+        if (!current.isBlank()) current += "\n\n";
+        history.setText(current + prefix + content);
+        history.positionCaret(history.getText().length());
     }
 }
