@@ -74,7 +74,7 @@ public class DashboardView {
         AppTheme.stylePrimaryButton(refreshSchemaBtn);
 
         Button changeConnBtn = new Button("Change connection");
-        AppTheme.styleSecondaryButton(changeConnBtn);
+        AppTheme.stylePrimaryButton(changeConnBtn);
         changeConnBtn.setOnAction(e -> sceneManager.switchTo(new ConnectionView(sceneManager).build(), "Connection"));
 
         Button aiChatBtn = new Button("Open AI Data Chat");
@@ -82,7 +82,7 @@ public class DashboardView {
         aiChatBtn.setDisable(true);
 
         Button openLocalSqlBtn = new Button("Open Local Analyst");
-        AppTheme.styleSecondaryButton(openLocalSqlBtn);
+        AppTheme.stylePrimaryButton(openLocalSqlBtn);
         openLocalSqlBtn.setOnAction(e -> sceneManager.switchTo(new com.dyploma.app.ui.LocalSqlGenView(sceneManager).build(), "Local Analyst"));
 
         Button sqlBtn = new Button("Open SQL Console (coming soon)");
@@ -93,7 +93,7 @@ public class DashboardView {
         AppTheme.styleDangerButton(logoutBtn);
 
         Button testLocalModelBtn = new Button("Test Ollama");
-        AppTheme.styleSecondaryButton(testLocalModelBtn);
+        AppTheme.stylePrimaryButton(testLocalModelBtn);
         testLocalModelBtn.setOnAction(e -> {
             testLocalModelBtn.setDisable(true);
             Label progress = new Label("Local AI: calling...");
