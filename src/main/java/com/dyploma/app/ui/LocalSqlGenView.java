@@ -8,6 +8,7 @@ import com.dyploma.app.service.LocalSqlSupport;
 import com.dyploma.app.service.SchemaService;
 import com.dyploma.app.service.SqlExecuteService;
 import javafx.geometry.Insets;
+import javafx.scene.Parent;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
@@ -22,29 +23,31 @@ public class LocalSqlGenView {
         this.sceneManager = sceneManager;
     }
 
-    public VBox build() {
+    public Parent build() {
         LocalAnalysisService localAi = new LocalAnalysisService();
         AiService plannerAi = new AiService();
 
         Label title = new Label("Private Local Analyst");
-        title.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
+        AppTheme.styleTitle(title);
 
         Label subtitle = new Label("Ask analytical questions here. The app can use cloud planning without sending raw business data, then execute analysis locally and let the local model explain the result.");
-        subtitle.setWrapText(true);
+        AppTheme.styleSubtitle(subtitle);
 
         SchemaService.SchemaInfo schema = AppState.getCurrentSchema();
         Label schemaHint = new Label(schema != null
                 ? "Schema: loaded"
                 : "Schema: not loaded (go to Dashboard -> Refresh schema)");
+        AppTheme.styleHint(schemaHint);
 
         Label agentHint = new Label("Private analysis model: " + localAi.getConfiguredAnalysisModel()
                 + " | Planner: " + (plannerAi.isPlannerAvailable() ? "cloud schema-only" : "local fallback"));
-        agentHint.setStyle("-fx-opacity: 0.75;");
+        AppTheme.styleHint(agentHint);
 
         TextArea chatHistory = new TextArea();
         chatHistory.setEditable(false);
         chatHistory.setWrapText(true);
         chatHistory.setPrefRowCount(18);
+        AppTheme.styleField(chatHistory);
         chatHistory.setText("""
 Local analyst: Ask about trends, comparisons, growth, customer segments, seasonality, or simple forecasts.
 
@@ -54,12 +57,17 @@ If you want to inspect raw rows or ask direct data lookup questions like "top 5 
         TextArea question = new TextArea();
         question.setPromptText("Ask an analytical question, for example: Compare this month to last month, or estimate next month's revenue trend.");
         question.setPrefRowCount(4);
+        AppTheme.styleField(question);
 
         Button askBtn = new Button("Analyze");
+        AppTheme.stylePrimaryButton(askBtn);
         askBtn.setDisable(schema == null);
+
         Button backBtn = new Button("Back to Dashboard");
+        AppTheme.styleSecondaryButton(backBtn);
 
         Label status = new Label("Ready");
+        AppTheme.styleStatus(status);
 
         askBtn.setOnAction(e -> {
             String q = question.getText();
@@ -97,9 +105,12 @@ If you want to inspect raw rows or ask direct data lookup questions like "top 5 
         backBtn.setOnAction(e -> sceneManager.switchTo(new com.dyploma.app.ui.dashboard.DashboardView(sceneManager).build(), "Dashboard"));
 
         HBox buttons = new HBox(10, askBtn, backBtn);
-        VBox root = new VBox(12, title, subtitle, schemaHint, agentHint, chatHistory, question, buttons, status);
-        root.setPadding(new Insets(16));
-        root.setMaxWidth(920);
+        HBox.setHgrow(askBtn, javafx.scene.layout.Priority.ALWAYS);
+        HBox.setHgrow(backBtn, javafx.scene.layout.Priority.ALWAYS);
+        VBox root = new VBox(18, title, subtitle, schemaHint, agentHint, chatHistory, question, buttons, status);
+        root.setPadding(new Insets(4));
+        root.setPrefWidth(1120);
+        root.setMaxWidth(1200);
 
         root.sceneProperty().addListener((obs, oldScene, newScene) -> {
             if (newScene != null) {
@@ -107,7 +118,7 @@ If you want to inspect raw rows or ask direct data lookup questions like "top 5 
             }
         });
 
-        return root;
+        return AppTheme.wrap(root);
     }
 
     private void runLocalAnalysis(AiService plannerAi,
@@ -338,10 +349,10 @@ If you want to inspect raw rows or ask direct data lookup questions like "top 5 
                 || q.contains("revenue")
                 || q.contains("sales")
                 || q.contains("income")
-                || q.contains("прибут")
-                || q.contains("дохід")
-                || q.contains("вируч")
-                || q.contains("продаж");
+                || q.contains("РїСЂРёР±СѓС‚")
+                || q.contains("РґРѕС…С–Рґ")
+                || q.contains("РІРёСЂСѓС‡")
+                || q.contains("РїСЂРѕРґР°Р¶");
         if (!financialQuestion) {
             return false;
         }
@@ -386,8 +397,12 @@ If you want to inspect raw rows or ask direct data lookup questions like "top 5 
             default -> "";
         };
         String current = history.getText();
-        if (current == null) current = "";
-        if (!current.isBlank()) current += "\n\n";
+        if (current == null) {
+            current = "";
+        }
+        if (!current.isBlank()) {
+            current += "\n\n";
+        }
         history.setText(current + prefix + content);
         history.positionCaret(history.getText().length());
     }

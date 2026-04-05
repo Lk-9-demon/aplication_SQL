@@ -5,17 +5,17 @@ import com.dyploma.app.model.User;
 import com.dyploma.app.service.AiService;
 import com.dyploma.app.service.SchemaService;
 import com.dyploma.app.service.SqlExecuteService;
+import javafx.beans.property.SimpleObjectProperty;
+import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
-import javafx.scene.control.*;
+import javafx.scene.Parent;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableView;
+import javafx.scene.control.TextArea;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
-import javafx.scene.control.TableView;
-import javafx.scene.control.TableColumn;
-import javafx.collections.FXCollections;
-import javafx.beans.property.SimpleObjectProperty;
-
-import java.util.ArrayList;
-import java.util.List;
 
 public class AiChatView {
 
@@ -25,18 +25,22 @@ public class AiChatView {
         this.sceneManager = sceneManager;
     }
 
-    public VBox build() {
+    public Parent build() {
         Label title = new Label("AI Data Chat");
-        title.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
+        AppTheme.styleTitle(title);
+
+        Label subtitle = new Label("Ask direct data questions, review a clean response, and inspect structured results without losing context.");
+        AppTheme.styleSubtitle(subtitle);
 
         SchemaService.SchemaInfo schema = AppState.getCurrentSchema();
-        Label schemaHint = new Label(schema != null ? "Schema: loaded" : "Schema: not loaded (go to Dashboard → Refresh schema)");
+        Label schemaHint = new Label(schema != null ? "Schema: loaded" : "Schema: not loaded (go to Dashboard -> Refresh schema)");
+        AppTheme.styleHint(schemaHint);
 
-        // Історія чату
         TextArea chatHistory = new TextArea();
         chatHistory.setEditable(false);
         chatHistory.setWrapText(true);
         chatHistory.setPrefRowCount(16);
+        AppTheme.styleField(chatHistory);
         chatHistory.setText("""
 Assistant: Use this chat when you want to inspect data from the database directly.
 
@@ -46,17 +50,22 @@ Examples: top 5 albums sold, most expensive track, customers from the USA, or be
         TextArea question = new TextArea();
         question.setPromptText("Ask a direct data question, for example: top 5 albums sold or most expensive track...");
         question.setPrefRowCount(4);
+        AppTheme.styleField(question);
 
         Button askBtn = new Button("Ask");
+        AppTheme.stylePrimaryButton(askBtn);
+
         Button backBtn = new Button("Back to Dashboard");
-        // Активуємо кнопку, якщо схема вже завантажена; інакше підказка
+        AppTheme.styleSecondaryButton(backBtn);
         askBtn.setDisable(schema == null);
 
         Label status = new Label("Ready");
+        AppTheme.styleStatus(status);
 
-        // Панель табличного результату (відображається для запитів, які повертають таблицю)
         TableView<java.util.List<Object>> table = new TableView<>();
-        table.setPlaceholder(new Label("No tabular result yet"));
+        Label tablePlaceholder = new Label("No tabular result yet");
+        AppTheme.styleHint(tablePlaceholder);
+        table.setPlaceholder(tablePlaceholder);
         table.setMaxHeight(320);
 
         askBtn.setOnAction(e -> {
@@ -67,11 +76,10 @@ Examples: top 5 albums sold, most expensive track, customers from the USA, or be
             }
             SchemaService.SchemaInfo sc = AppState.getCurrentSchema();
             if (sc == null) {
-                status.setText("Schema is not loaded — go to Dashboard and click 'Refresh schema'");
+                status.setText("Schema is not loaded - go to Dashboard and click 'Refresh schema'");
                 return;
             }
 
-            // знайдемо активне підключення для виконання SQL локально
             User user = AppState.getCurrentUser();
             if (user == null) {
                 status.setText("Not logged in");
@@ -90,90 +98,93 @@ Examples: top 5 albums sold, most expensive track, customers from the USA, or be
             new Thread(() -> {
                 try {
                     AiService ai = new AiService();
-                    String sql = ai.toSql(q, sc); // не показуємо користувачу
-                    // Тимчасовий діагностичний лог: показуємо початок згенерованого SQL у консолі
+                    String sql = ai.toSql(q, sc);
                     try {
                         String preview = sql == null ? "" : sql.replaceAll("\n", " ");
-                        if (preview.length() > 200) preview = preview.substring(0, 200) + "...";
+                        if (preview.length() > 200) {
+                            preview = preview.substring(0, 200) + "...";
+                        }
                         System.out.println("[DEBUG_LOG] toSql (first): " + preview);
-                    } catch (Exception ignore) {}
+                    } catch (Exception ignore) {
+                    }
 
-                    // Локальна перевірка/оцінка результату: рахуємо лише агрегати (без витоку рядків)
                     SqlExecuteService exec = new SqlExecuteService();
-                    long rowCount = -1L; // -1 означає "немає метрики"
+                    long rowCount = -1L;
                     boolean countOk = false;
-                    Exception firstErr = null;
                     try {
-                        // санітизуємо фінальну ";" на випадок, якщо модель її додала (SqlExecuteService також чистить у count, але продублюємо)
                         String sqlClean = sql != null ? sql.trim() : "";
-                        if (sqlClean.endsWith(";")) sqlClean = sqlClean.substring(0, sqlClean.length()-1).trim();
+                        if (sqlClean.endsWith(";")) {
+                            sqlClean = sqlClean.substring(0, sqlClean.length() - 1).trim();
+                        }
                         rowCount = exec.countRows(conn, sqlClean, 15);
                         countOk = true;
                         System.out.println("[DEBUG_LOG] countRows OK (first try): " + rowCount);
                     } catch (Exception exCnt) {
-                        firstErr = exCnt;
                         System.out.println("[DEBUG_LOG] countRows FAILED (first try): " + exCnt.getMessage());
-                        // Спробуємо один раз перегенерувати SQL із підказкою про помилку і суворою відповідністю іменам
                         try {
                             String retrySql = ai.toSqlRetryNamesOnly(q, sc, exCnt.getMessage());
                             try {
                                 String retryPreview = retrySql == null ? "" : retrySql.replaceAll("\n", " ");
-                                if (retryPreview.length() > 200) retryPreview = retryPreview.substring(0, 200) + "...";
+                                if (retryPreview.length() > 200) {
+                                    retryPreview = retryPreview.substring(0, 200) + "...";
+                                }
                                 System.out.println("[DEBUG_LOG] toSql (retry): " + retryPreview);
-                            } catch (Exception ignore) {}
+                            } catch (Exception ignore) {
+                            }
                             String retryClean = retrySql != null ? retrySql.trim() : "";
-                            if (retryClean.endsWith(";")) retryClean = retryClean.substring(0, retryClean.length()-1).trim();
+                            if (retryClean.endsWith(";")) {
+                                retryClean = retryClean.substring(0, retryClean.length() - 1).trim();
+                            }
                             rowCount = exec.countRows(conn, retryClean, 15);
-                            sql = retryClean; // зафіксуємо оновлений запит як поточний
+                            sql = retryClean;
                             countOk = true;
                             System.out.println("[DEBUG_LOG] countRows OK (retry): " + rowCount);
                         } catch (Exception exRetry) {
                             System.out.println("[DEBUG_LOG] countRows FAILED (retry): " + exRetry.getMessage());
-                            // лишаємо countOk=false, продовжуємо без метрики
                         }
                     }
-                    // Якщо запит не є суто агрегатним COUNT, спробуємо отримати обмежений табличний результат
-                    // Визначимо ліміт: якщо в питанні є "top N" — беремо N, інакше дефолт 1000
+
                     int sampleLimit = detectTopN(q);
-                    if (sampleLimit <= 0) sampleLimit = 1000;
+                    if (sampleLimit <= 0) {
+                        sampleLimit = 1000;
+                    }
 
                     SqlExecuteService.QueryResult sample = null;
                     try {
                         sample = new SqlExecuteService().querySample(conn, sql, sampleLimit, 15);
                     } catch (Exception exSample) {
-                        // Якщо sample не вдалось (наприклад, агрегатний COUNT або помилка) — не критично, продовжуємо без таблиці
                         System.out.println("[DEBUG_LOG] querySample FAILED: " + exSample.getMessage());
                     }
 
-                    // Побудуємо метрики для пояснення: колонки + кількість показаних рядків + total row_count (якщо вдалося)
                     StringBuilder mtx = new StringBuilder();
                     if (countOk) {
                         mtx.append("row_count=").append(rowCount);
                     }
                     if (sample != null && sample.columns != null && !sample.columns.isEmpty()) {
-                        if (mtx.length() > 0) mtx.append("; ");
+                        if (mtx.length() > 0) {
+                            mtx.append("; ");
+                        }
                         mtx.append("columns=").append(String.join(",", sample.columns));
-                        if (mtx.length() > 0) mtx.append("; ");
+                        if (mtx.length() > 0) {
+                            mtx.append("; ");
+                        }
                         mtx.append("rows_shown=").append(sample.rows != null ? sample.rows.size() : 0);
                     }
                     String metrics = mtx.length() == 0 ? null : mtx.toString();
-                    // Діагностика: що саме відправляємо в AiService.toExplanationWithMetrics
                     try {
                         System.out.println("[DEBUG_LOG] toExplanation metrics: " + (metrics == null ? "<none>" : metrics));
-                    } catch (Exception ignore) {}
+                    } catch (Exception ignore) {
+                    }
 
-                    // Етап 2: пояснення для користувача на основі СХЕМИ + агрегованих метрик (без сирих даних)
                     String explanation = ai.toExplanationWithMetrics(q, sc, sql, metrics);
 
-                    // Підготуємо фінальні посилання для лямбди
                     final SqlExecuteService.QueryResult fSample = sample;
-                    final java.util.List<String> fCols = (fSample != null) ? fSample.columns : null;
-                    final java.util.List<java.util.List<Object>> fRows = (fSample != null) ? fSample.rows : null;
+                    final java.util.List<String> fCols = fSample != null ? fSample.columns : null;
+                    final java.util.List<java.util.List<Object>> fRows = fSample != null ? fSample.rows : null;
                     final String fExplanation = explanation;
 
                     javafx.application.Platform.runLater(() -> {
                         appendChat(chatHistory, "assistant", fExplanation);
-                        // Якщо маємо табличний результат — покажемо під історією чату
                         if (fCols != null && !fCols.isEmpty()) {
                             renderTable(table, fCols, fRows);
                         }
@@ -194,11 +205,14 @@ Examples: top 5 albums sold, most expensive track, customers from the USA, or be
         backBtn.setOnAction(e -> sceneManager.switchTo(new com.dyploma.app.ui.dashboard.DashboardView(sceneManager).build(), "Dashboard"));
 
         HBox buttons = new HBox(10, askBtn, backBtn);
-        VBox root = new VBox(12, title, schemaHint, chatHistory, table, question, buttons, status);
-        root.setPadding(new Insets(16));
-        root.setMaxWidth(900);
+        HBox.setHgrow(askBtn, javafx.scene.layout.Priority.ALWAYS);
+        HBox.setHgrow(backBtn, javafx.scene.layout.Priority.ALWAYS);
+        VBox hero = new VBox(6, title, subtitle);
+        VBox root = new VBox(18, hero, schemaHint, chatHistory, table, question, buttons, status);
+        root.setPadding(new Insets(4));
+        root.setPrefWidth(1120);
+        root.setMaxWidth(1200);
 
-        // Додаткова перевірка активності кнопки після відображення екрана (на випадок, якщо схема вже була завантажена)
         root.sceneProperty().addListener((obs, oldScene, newScene) -> {
             if (newScene != null) {
                 javafx.application.Platform.runLater(() -> {
@@ -207,15 +221,17 @@ Examples: top 5 albums sold, most expensive track, customers from the USA, or be
                 });
             }
         });
-        return root;
+        return AppTheme.wrap(root);
     }
 
     private void renderTable(TableView<java.util.List<Object>> table,
-                              java.util.List<String> columns,
-                              java.util.List<java.util.List<Object>> rows) {
+                             java.util.List<String> columns,
+                             java.util.List<java.util.List<Object>> rows) {
         table.getColumns().clear();
         table.getItems().clear();
-        if (columns == null || columns.isEmpty()) return;
+        if (columns == null || columns.isEmpty()) {
+            return;
+        }
         for (int i = 0; i < columns.size(); i++) {
             final int colIndex = i;
             TableColumn<java.util.List<Object>, Object> col = new TableColumn<>(columns.get(i));
@@ -232,24 +248,34 @@ Examples: top 5 albums sold, most expensive track, customers from the USA, or be
         }
     }
 
-    // Проста детекція top N з тексту питання
     private int detectTopN(String question) {
-        if (question == null) return -1;
+        if (question == null) {
+            return -1;
+        }
         String q = question.toLowerCase();
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("top[- ]?(\\d+)").matcher(q);
         if (m.find()) {
-            try { return Integer.parseInt(m.group(1)); } catch (Exception ignore) {}
+            try {
+                return Integer.parseInt(m.group(1));
+            } catch (Exception ignore) {
+            }
         }
         m = java.util.regex.Pattern.compile("first[ ]+(\\d+)").matcher(q);
         if (m.find()) {
-            try { return Integer.parseInt(m.group(1)); } catch (Exception ignore) {}
+            try {
+                return Integer.parseInt(m.group(1));
+            } catch (Exception ignore) {
+            }
         }
-        m = java.util.regex.Pattern.compile("найкращ[іi][ ]+(\\d+)|лучшие[ ]+(\\d+)").matcher(q);
+        m = java.util.regex.Pattern.compile("РЅР°Р№РєСЂР°С‰[С–i][ ]+(\\d+)|Р»СѓС‡С€РёРµ[ ]+(\\d+)").matcher(q);
         if (m.find()) {
             for (int i = 1; i <= m.groupCount(); i++) {
                 String g = m.group(i);
                 if (g != null) {
-                    try { return Integer.parseInt(g); } catch (Exception ignore) {}
+                    try {
+                        return Integer.parseInt(g);
+                    } catch (Exception ignore) {
+                    }
                 }
             }
         }
@@ -263,8 +289,12 @@ Examples: top 5 albums sold, most expensive track, customers from the USA, or be
             default -> "";
         };
         String current = history.getText();
-        if (current == null) current = "";
-        if (!current.isBlank()) current += "\n\n";
+        if (current == null) {
+            current = "";
+        }
+        if (!current.isBlank()) {
+            current += "\n\n";
+        }
         history.setText(current + prefix + content);
         history.positionCaret(history.getText().length());
     }

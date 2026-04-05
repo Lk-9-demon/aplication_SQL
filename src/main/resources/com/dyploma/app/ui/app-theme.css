@@ -1,0 +1,317 @@
+.app-screen {
+    -fx-background-color: linear-gradient(to bottom right, #fffdf9 0%, #fff6ee 42%, #fff1e4 100%);
+}
+
+.app-shell {
+    -fx-background-color: transparent;
+}
+
+.app-glow {
+    -fx-background-radius: 999;
+}
+
+.app-glow-amber {
+    -fx-background-color: radial-gradient(center 40% 40%, radius 62%, rgba(243, 122, 32, 0.4), rgba(243, 122, 32, 0));
+}
+
+.app-glow-teal {
+    -fx-background-color: radial-gradient(center 42% 42%, radius 60%, rgba(255, 169, 93, 0.26), rgba(255, 169, 93, 0));
+}
+
+.app-glow-citrus {
+    -fx-background-color: radial-gradient(center 50% 50%, radius 58%, rgba(255, 210, 162, 0.32), rgba(255, 210, 162, 0));
+}
+
+.app-scroll {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+    -fx-border-color: transparent;
+}
+
+.app-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+
+.app-surface {
+    -fx-background-color: rgba(250, 249, 245, 0.88);
+    -fx-background-radius: 34;
+    -fx-border-color: rgba(243, 122, 32, 0.14);
+    -fx-border-radius: 34;
+    -fx-padding: 32;
+    -fx-effect: dropshadow(gaussian, rgba(145, 84, 37, 0.15), 40, 0.22, 0, 20);
+}
+
+.screen-content {
+    -fx-spacing: 18;
+}
+
+.brand-bar {
+    -fx-background-color: rgba(255, 255, 255, 0.62);
+    -fx-background-radius: 24;
+    -fx-border-color: rgba(243, 122, 32, 0.16);
+    -fx-border-radius: 24;
+    -fx-padding: 12 16 12 14;
+}
+
+.brand-logo-plate {
+    -fx-background-color: linear-gradient(to bottom, white 0%, #fff7ef 100%);
+    -fx-background-radius: 20;
+    -fx-border-color: rgba(243, 122, 32, 0.14);
+    -fx-border-radius: 20;
+    -fx-padding: 4;
+    -fx-effect: dropshadow(gaussian, rgba(243, 122, 32, 0.18), 16, 0.16, 0, 4);
+}
+
+.brand-logo-fallback {
+    -fx-font-family: "Bahnschrift SemiBold";
+    -fx-font-size: 30px;
+    -fx-text-fill: #f37a20;
+}
+
+.brand-kicker {
+    -fx-font-family: "Bahnschrift SemiBold";
+    -fx-font-size: 12px;
+    -fx-text-fill: #d9681b;
+}
+
+.brand-caption {
+    -fx-font-size: 12px;
+    -fx-text-fill: #8b5a38;
+}
+
+.brand-chip {
+    -fx-background-color: linear-gradient(to right, rgba(255, 244, 235, 0.98), rgba(255, 236, 219, 0.98));
+    -fx-background-radius: 999;
+    -fx-border-color: rgba(243, 122, 32, 0.2);
+    -fx-border-radius: 999;
+    -fx-padding: 8 12 8 12;
+    -fx-font-family: "Bahnschrift SemiBold";
+    -fx-font-size: 11px;
+    -fx-text-fill: #d9681b;
+}
+
+.label {
+    -fx-font-family: "Segoe UI";
+    -fx-text-fill: #6d472e;
+}
+
+.screen-title {
+    -fx-font-family: "Bahnschrift SemiBold";
+    -fx-font-size: 31px;
+    -fx-text-fill: #8c4e1d;
+}
+
+.screen-subtitle {
+    -fx-font-size: 13px;
+    -fx-line-spacing: 3px;
+    -fx-text-fill: #9a6a46;
+}
+
+.lead-label {
+    -fx-font-size: 16px;
+    -fx-font-weight: 700;
+    -fx-text-fill: #8d5124;
+}
+
+.hint-label {
+    -fx-font-size: 12px;
+    -fx-text-fill: #a1734e;
+}
+
+.status-pill {
+    -fx-background-color: linear-gradient(to right, rgba(255, 255, 255, 0.9), rgba(255, 246, 236, 0.92));
+    -fx-background-radius: 999;
+    -fx-border-color: rgba(243, 122, 32, 0.16);
+    -fx-border-radius: 999;
+    -fx-padding: 11 15 11 15;
+    -fx-text-fill: #7b4d29;
+}
+
+.section-card {
+    -fx-background-color: linear-gradient(to bottom right, rgba(255, 255, 255, 0.62), rgba(255, 247, 238, 0.52));
+    -fx-background-radius: 24;
+    -fx-border-color: rgba(243, 122, 32, 0.12);
+    -fx-border-radius: 24;
+    -fx-padding: 20;
+    -fx-spacing: 10;
+}
+
+.section-title {
+    -fx-font-family: "Bahnschrift SemiBold";
+    -fx-font-size: 16px;
+    -fx-text-fill: #c55f14;
+}
+
+.text-field,
+.password-field,
+.combo-box,
+.text-area {
+    -fx-background-color: rgba(255, 255, 255, 0.94);
+    -fx-control-inner-background: rgba(255, 255, 255, 0.98);
+    -fx-background-insets: 0;
+    -fx-background-radius: 17;
+    -fx-border-color: rgba(243, 122, 32, 0.18);
+    -fx-border-radius: 17;
+    -fx-border-width: 1;
+    -fx-padding: 11 14 11 14;
+    -fx-font-size: 13px;
+    -fx-highlight-fill: rgba(243, 122, 32, 0.18);
+    -fx-highlight-text-fill: #6a3d1f;
+}
+
+.text-area .content {
+    -fx-background-color: rgba(255, 255, 255, 0.98);
+    -fx-background-radius: 17;
+}
+
+.text-field:focused,
+.password-field:focused,
+.combo-box:focused,
+.text-area:focused {
+    -fx-border-color: #e87420;
+    -fx-effect: dropshadow(gaussian, rgba(243, 122, 32, 0.14), 18, 0.18, 0, 4);
+}
+
+.combo-box .list-cell {
+    -fx-text-fill: #6d472e;
+}
+
+.button {
+    -fx-background-color: rgba(255, 255, 255, 0.9);
+    -fx-text-fill: #7c4c29;
+    -fx-font-family: "Bahnschrift SemiBold";
+    -fx-font-size: 13px;
+    -fx-background-radius: 17;
+    -fx-border-radius: 17;
+    -fx-border-color: rgba(243, 122, 32, 0.18);
+    -fx-padding: 12 20 12 20;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(145, 84, 37, 0.08), 16, 0.2, 0, 6);
+}
+
+.button:hover {
+    -fx-background-color: linear-gradient(to right, rgba(255, 255, 255, 0.98), rgba(255, 248, 242, 0.98));
+    -fx-border-color: rgba(243, 122, 32, 0.2);
+}
+
+.button:pressed {
+    -fx-background-color: rgba(244, 241, 235, 0.98);
+}
+
+.button:disabled {
+    -fx-opacity: 0.58;
+    -fx-effect: none;
+}
+
+.primary-button {
+    -fx-background-color: linear-gradient(to right, #f37a20 0%, #ff973d 100%);
+    -fx-text-fill: white;
+    -fx-border-color: transparent;
+}
+
+.primary-button:hover {
+    -fx-background-color: linear-gradient(to right, #fb8b32 0%, #ffaa57 100%);
+}
+
+.primary-button:pressed {
+    -fx-background-color: linear-gradient(to right, #d96a16 0%, #f08826 100%);
+}
+
+.secondary-button {
+    -fx-background-color: linear-gradient(to right, rgba(255, 255, 255, 0.98), rgba(255, 245, 235, 0.98));
+}
+
+.danger-button {
+    -fx-background-color: linear-gradient(to right, #d46a1f 0%, #f19238 100%);
+    -fx-text-fill: white;
+    -fx-border-color: transparent;
+}
+
+.danger-button:hover {
+    -fx-background-color: linear-gradient(to right, #e2792a 0%, #f7a552 100%);
+}
+
+.danger-button:pressed {
+    -fx-background-color: linear-gradient(to right, #b95b17 0%, #d9802e 100%);
+}
+
+.app-tabs {
+    -fx-tab-min-height: 44;
+}
+
+.app-tabs .tab-header-area .tab-header-background {
+    -fx-background-color: transparent;
+}
+
+.app-tabs .tab {
+    -fx-background-color: rgba(255, 255, 255, 0.62);
+    -fx-background-insets: 0;
+    -fx-background-radius: 18 18 0 0;
+    -fx-padding: 10 20 10 20;
+}
+
+.app-tabs .tab:selected {
+    -fx-background-color: linear-gradient(to bottom, rgba(243, 122, 32, 0.18), rgba(255, 255, 255, 0.95));
+}
+
+.app-tabs .tab .tab-label {
+    -fx-font-family: "Bahnschrift SemiBold";
+    -fx-text-fill: #9b7a60;
+}
+
+.app-tabs .tab:selected .tab-label {
+    -fx-text-fill: #d9681b;
+}
+
+.app-tabs .tab-content-area {
+    -fx-background-color: rgba(255, 255, 255, 0.62);
+    -fx-background-radius: 0 22 22 22;
+    -fx-border-color: rgba(243, 122, 32, 0.12);
+    -fx-border-radius: 0 22 22 22;
+    -fx-padding: 20;
+}
+
+.table-view {
+    -fx-background-color: rgba(255, 255, 255, 0.8);
+    -fx-background-radius: 24;
+    -fx-border-color: rgba(243, 122, 32, 0.14);
+    -fx-border-radius: 24;
+    -fx-padding: 6;
+}
+
+.table-view .column-header-background {
+    -fx-background-color: linear-gradient(to right, rgba(255, 224, 196, 0.66), rgba(243, 122, 32, 0.16));
+    -fx-background-radius: 18 18 0 0;
+    -fx-background-insets: 0;
+}
+
+.table-view .column-header,
+.table-view .filler {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent rgba(243, 122, 32, 0.08) transparent;
+}
+
+.table-view .column-header .label {
+    -fx-font-family: "Bahnschrift SemiBold";
+    -fx-text-fill: #8c4e1d;
+}
+
+.table-row-cell {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent rgba(243, 122, 32, 0.08) transparent;
+}
+
+.table-row-cell:filled:selected {
+    -fx-background-color: rgba(243, 122, 32, 0.16);
+}
+
+.watermark-label {
+    -fx-background-color: rgba(255, 255, 255, 0.58);
+    -fx-background-radius: 999;
+    -fx-border-color: rgba(243, 122, 32, 0.12);
+    -fx-border-radius: 999;
+    -fx-padding: 6 12 6 12;
+    -fx-font-family: "Bahnschrift";
+    -fx-font-size: 11px;
+    -fx-text-fill: rgba(163, 102, 51, 0.88);
+}
